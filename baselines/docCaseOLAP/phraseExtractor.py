@@ -6,14 +6,19 @@ from tqdm import tqdm
 alpha = 0.5
 
 class phraseExtractor:
-    def __init__(self, entity_candidates, target_doc_list, sibling_groups, entity2freq):
+    def __init__(self, entity_candidates, phrase2idx, target_doc_list, sibling_groups, entity2freq):
         self.entity_candidates = entity_candidates
         self.target_doc_list = target_doc_list
         self.sibling_groups = sibling_groups
+        self.phrase2idx = phrase2idx
         self.entity2embed = None#entity2embed
         self.entity2freq = entity2freq
 
         self.ranked_list = []
+
+    def add_relevance_score(self, relevance_scores):
+        assert(len(self.entity_candidates) == len(relevance_scores))
+        self.relevance_scores = relevance_scores
 
     def bm25_df_paper(self, df, max_df, tf, dl, avgdl, k=1.2, b=0.5, multiplier=3):
         if df * tf == 0:
@@ -74,7 +79,7 @@ class phraseExtractor:
         tf = sum([self.inverted_index[entity]['a_' + str(doc_id)] for doc_id in group])
         return tf
 
-    def _compute_entity_score(self, entity, with_popularity):
+    def _compute_entity_score(self, entity, score_option):
         current_df = sum([1 if self.inverted_index[entity]['a_' + str(doc_id)] > 0 else 0 for doc_id in self.target_doc_list])
         score_list = []
         context_group = [(self._get_target_phrase_cnt(self.target_doc_list), current_df)]
@@ -92,18 +97,33 @@ class phraseExtractor:
 
         distinctiveness = score_list[0]
         popularity = math.log(1 + self.entity2freq[entity], 2)
-        if with_popularity:
+        if score_option == 'A':
             score = popularity * distinctiveness
-        else:
+        elif score_option == 'B':
             score = distinctiveness
+        elif score_option == 'C':
+            assert(self.relevance_scores is not None)
+            score = self.relevance_scores[self.phrase2idx[entity]] * distinctiveness
+        elif score_option == 'D':
+            assert(self.relevance_scores is not None)
+            score = self.relevance_scores[self.phrase2idx[entity]]
+        elif score_option == 'E':
+            score = popularity
+        else:
+            raise NotImplementedError
         return score
 
-    def compute_scores(self, document_phrase_cnt, inverted_index, with_popularity=True):
+    def compute_scores(self, document_phrase_cnt, inverted_index, score_option):
+        # score_option: A. popularity+distinc;
+        #               B. distinc
+        #               C. relevance+dictinc
+        #               D. relevance
+        #               E. popularity
         self.load_freq_data(document_phrase_cnt, inverted_index)
         self._calculate_sibling_max_df()
         print('Start calculating scores...')
         for entity in tqdm(self.entity_candidates):
-           score = self._compute_entity_score(entity, with_popularity)
+           score = self._compute_entity_score(entity, score_option)
            self.ranked_list.append((entity, score))
 
         self.ranked_list = sorted(self.ranked_list, key=lambda t: -t[1])
@@ -140,3 +160,4 @@ class phraseExtractor:
             chosen_phrases.append(phrase_scores[pick])
 
         return chosen_phrases
+        

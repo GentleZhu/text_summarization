@@ -9,6 +9,7 @@ import json
 from tqdm import tqdm
 import numpy as np
 import nltk
+from scipy import spatial
 from nltk.tokenize import sent_tokenize
 from nltk.tokenize import word_tokenize
 from nltk.corpus import wordnet as wn
@@ -57,6 +58,13 @@ def doc_clustering(model, cluster_num):
     print('Done.')
     return clusterer
 
+def kb_doc_clustering(train_data, cluster_num):
+    clusterer = SphericalKMeans(cluster_num)
+    print('Start clustering...')
+    clusterer.fit(train_data)
+    print('Done.')
+    return clusterer
+
 def get_cluster_membership(clusterer):
     # For each doc, we get which cluster it belongs to.
     cluster_membership = defaultdict(list)
@@ -79,6 +87,32 @@ def get_doc_membership(cluster_membership, doc_id):
         if 'a_' + str(doc_id) in cluster_membership[k]:
             return k
     return -1
+
+def load_emb(keys, emb_path):
+    model = Word2Vec(size=300, min_count=1)
+    model.build_vocab([keys])
+    #glove_file = datapath(emb_path)
+    #tmp_file = get_tmpfile('tmp.txt')
+    #glove2word2vec(glove_file, tmp_file)
+    #model.intersect_word2vec_format(tmp_file, binary=False, lockf=1.0)
+    model.intersect_word2vec_format(emb_path, binary=False, lockf=1.0)
+
+    vecs = []
+    for key in keys:
+        vecs.append(model.wv[key])
+    return np.array(vecs)
+
+def kb_rank_doc_similarity(target_set, cluster_members, training_data, reverse=True):
+    # For target doc sets, rank the other sets in the same cluster based on cosine similarity.
+    l = []
+    for cluster_member in cluster_members:
+        num_int = int(cluster_member[2:])
+        if num_int in target_set:
+            continue
+        similarity = np.mean([1 - spatial.distance.cosine(training_data[num_int - 1], training_data[doc_id - 1]) for doc_id in target_set])
+        #similarity = np.mean([np.dot(training_data[num_int - 1], training_data[doc_id - 1]) / np.linalg.norm(training_data[num_int - 1]) / np.linalg.norm(training_data[doc_id - 1]) for doc_id in target_set])
+        l.append((cluster_member, similarity))
+    return sorted(l, key=lambda t: t[1], reverse=reverse)
 
 def rank_docs_similarity(target_set, cluster_members, model, reverse=True):
     # For target doc sets, rank the other sets in the same cluster based on cosine similarity.
