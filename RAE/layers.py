@@ -4,8 +4,24 @@ from torch.autograd import Variable
 from torch.nn import Parameter
 import torch.nn.functional as F
 import numpy as np
-import cPickle
 import utils
+
+class DistMult(nn.Module):
+    def __init__(self, num_classes, input_features):
+        super(DistMult, self).__init__()
+        # nn.Parameter is a special kind of Variable, that will get
+        # automatically registered as Module's parameter once it's assigned
+        # as an attribute. Parameters and buffers need to be registered, or
+        # they won't appear in .parameters() (doesn't apply to buffers), and
+        # won't be converted when e.g. .cuda() is called. You can use
+        # .register_buffer() to register buffers.
+        # nn.Parameters can never be volatile and, different than Variables,
+        # they require gradients by default.
+        self.weight = nn.Parameter(t.randn(num_classes, input_features), requires_grad=True)
+
+    def forward(self, idx, input):
+        # See the autograd section for explanation of what happens here.
+        return input * self.weight[idx, :]
 
 class KnowledgeAwareAttention(nn.Module):
     """
@@ -25,8 +41,8 @@ class KnowledgeAwareAttention(nn.Module):
         self.init_weights()
 
     def init_weights(self):
-    	self.rlinear.weight.data.normal_(std=0.001)
-    	self.rlinear[0].weight.data.zero_()
+        self.rlinear.weight.data.normal_(std=0.001)
+        self.rlinear[0].weight.data.zero_()
         self.rlinear[0].requires_grad = False
     
     def forward(self, x, x_mask, q, f):
