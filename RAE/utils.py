@@ -29,6 +29,11 @@ class textGraph(object):
                 self.id2name[int(tmp[1])] = tmp[0]
         #print(self.name2id['DOC_1000'])
 
+    def dump_mapping(self, output_file):
+        with open(output_file, 'w') as OUT:
+            for k,v in self.name2id.items():
+                OUT.write("{}\t{}\n".format(k,v))
+
     def translate_emb(self, input_emb, output_emb):
         with open(input_emb) as IN, open(output_emb, 'w', encoding='utf8') as OUT:
             OUT.write(IN.readline())
@@ -45,21 +50,18 @@ class textGraph(object):
         # Lower case
         texts = [x.lower() for x in self.texts]
 
-        # Remove punctuation
-        texts = [''.join(c for c in x if c not in string.punctuation) for x in texts]
-
         # Remove numbers
         texts = [''.join(c for c in x if c not in '0123456789') for x in texts]
 
-        # Remove stopwords
-        texts = [' '.join([word for word in x.split() if word not in (self.stopwords)]) for x in texts]
+        # Remove stopwords and punctuation
+        texts = [' '.join([word.strip(string.punctuation) for word in x.split() if word not in (self.stopwords)]) for x in texts]
 
         # Trim extra whitespace
         self.texts = [' '.join(x.split()) for x in texts]
         
         #return(texts)
 
-    def build_dictionary(self, vocabulary_size = 150000):
+    def build_dictionary(self, vocabulary_size = 1000000):
         # Turn sentences (list of strings) into lists of words
         split_sentences = [s.split() for s in self.texts]
         split_tuples = [s[:2] for s in self.tuples]
@@ -111,10 +113,15 @@ class textGraph(object):
     def load_corpus(self, corpusIn, jsonIn):
         self.tuples = []
         self.texts = []
-        with open(corpusIn) as IN, open(jsonIn) as JSON:
-            for cline, jline in zip(IN, JSON):
+        sports = [27, 30, 32, 41, 65, 201, 239, 297, 422, 427, 441, 669, 694, 713, 742, 801, 834, 1006, 1030, 1036, 1119, 1418, 2896, 3353, 3667, 3813, 4367, 4516, 5042, 5638, 6058, 6101, 6469]
+        with open(corpusIn) as IN, open(jsonIn) as JSON, open('study.txt', 'w') as study:
+            for idx, (cline, jline) in enumerate(zip(IN, JSON)):
                 ner = list(set(map(lambda x:x[0].strip().replace(' ','_').lower(), json.loads(jline)['ner'])))
                 a,b,c,d = self.Linker.expand(ner, 1)
+                if idx in sports:
+                    for tup in d:
+                        study.write(' '.join(tup[:2]) + '\t')
+                    study.write('\n')
                 self.tuples += d
                 self.texts.append(cline)
         self.num_docs = len(self.texts)
@@ -133,7 +140,7 @@ class textGraph(object):
             batch = [x + [idx] for x in batch]
             inputs += batch
             outputs += labels
-        print(outputs[-1])
+        #print(outputs[-1])
         print("Training data stats: records {}, kb pairs {}".format(len(inputs), len(self.tuple_data)))
         for tup in self.tuple_data:
             inputs.append([tup[0]]*window_size + [tup[2] + len(self.data)])

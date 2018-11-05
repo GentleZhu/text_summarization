@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class NCE_SIGMOID(nn.Module):
@@ -24,3 +25,12 @@ class NCE_SIGMOID(nn.Module):
             self._log_sigmoid(scores[:, 0])
             + torch.sum(self._log_sigmoid(-scores[:, 1:]), dim=1) / k
         ) / scores.size()[0]
+
+class NCE_HINGE(nn.Module):
+    """docstring for NCE_HINGE"""
+    def __init__(self):
+        super(NCE_HINGE, self).__init__()
+
+    def forward(self, scores):
+        return torch.sum(F.relu(scores[:, 1:] - scores[:, 0].unsqueeze(1) + 1)) / scores.size()[0]
+        
