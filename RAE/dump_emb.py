@@ -12,14 +12,14 @@ import torch as t
 import numpy as np
 import pickle
 
-config = {'batch_size': 128, 'epoch_number': 5, 'emb_size': 100, 'kb_emb_size': 50, 'num_sample': 5, 'gpu':2,
-		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'nyt13_sample', 'method':'doc2vec'}
+config = {'batch_size': 128, 'epoch_number': 16, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
+		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_sports', 'method':'knowledge2vec'}
 
-relation_list=['people.person.nationality','people.person.profession','location.location.contains']
+#relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69']
+relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69']
 tmp = FreebaseLinker(relation_list)
 
-
-save_point = pickle.load(open('{}.p'.format(config['dataset']), 'rb'))
+save_point = pickle.load(open("{}_{}.p".format(config['method'], config['dataset']), 'rb'))
 X = save_point['X']
 y = save_point['y']
 num_docs = save_point['num_docs']
@@ -28,7 +28,7 @@ num_words = save_point['num_words']
 #t.cuda.set_device(int(config['gpu']))
 
 model = KnowledgeD2V(num_words=num_words, num_docs=num_docs, embed_size=config['emb_size'],
-	kb_emb_size=config['kb_emb_size'], relational_bias=None)
+	kb_emb_size=config['kb_emb_size'], relational_bias=relation_list)
 #model.cuda()
 model_path = "{}{}_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['epoch_number'])
 #model_path = '/shared/data/qiz3/text_summ/src/model/doc2vec_nyt13_110k_epoch_50.pt'

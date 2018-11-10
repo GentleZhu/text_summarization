@@ -124,6 +124,5 @@ if __name__ == '__main__':
     jsonIn = open(args.in1)
     tmp.load_corpus(jsonIn)
     #doc_id
-    tmp.rank_phrase_tfidf(0)
     embed()
     exit()

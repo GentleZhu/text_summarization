@@ -42,8 +42,7 @@ class KnowledgeD2V(nn.Module):
             self.relational_bias = True
             self.r_linear = DistMult(len(relational_bias), self.kb_emb_size)
             self.W_r = nn.Linear(self.embed_size, self.kb_emb_size)
-            self.W_r.weight.data.normal_()
-            #self.W_r.weight.data.normal_(std=0.001)
+            self.W_r.weight.data.normal_(std=0.001)
         else:
             self.relational_bias = False
 
@@ -117,7 +116,7 @@ class KnowledgeD2V(nn.Module):
             #assert r_output.size()[1] == 6
             #return self.nce_loss(r_output)
             
-            return self.nce_loss(r_output), self.nce_loss(r_output).float()
+            return self.nce_loss(output) + self.nce_loss(r_output), self.nce_loss(r_output).float()
         
         return self.nce_loss(output), 0.0
 

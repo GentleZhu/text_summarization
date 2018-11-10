@@ -5,6 +5,7 @@ import io
 import tarfile
 import collections
 import numpy as np
+from tqdm import tqdm
 
 class textGraph(object):
     """docstring for textGraph"""
@@ -14,6 +15,8 @@ class textGraph(object):
         self.id2name = dict()
         self.stopwords = set()
         self.Linker = arg
+        self.tuples = []
+        self.texts = []
 		#self.name2type = dict()
 
     def load_stopwords(self, in_file):
@@ -111,21 +114,24 @@ class textGraph(object):
             self.tuple_data.append(tup_data)
 
     def load_corpus(self, corpusIn, jsonIn):
-        self.tuples = []
-        self.texts = []
-        sports = [27, 30, 32, 41, 65, 201, 239, 297, 422, 427, 441, 669, 694, 713, 742, 801, 834, 1006, 1030, 1036, 1119, 1418, 2896, 3353, 3667, 3813, 4367, 4516, 5042, 5638, 6058, 6101, 6469]
-        with open(corpusIn) as IN, open(jsonIn) as JSON, open('study.txt', 'w') as study:
-            for idx, (cline, jline) in enumerate(zip(IN, JSON)):
-                ner = list(set(map(lambda x:x[0].strip().replace(' ','_').lower(), json.loads(jline)['ner'])))
-                a,b,c,d = self.Linker.expand(ner, 1)
-                if idx in sports:
-                    for tup in d:
-                        study.write(' '.join(tup[:2]) + '\t')
-                    study.write('\n')
+        #sports = [27, 30, 32, 41, 65, 201, 239, 297, 422, 427, 441, 669, 694, 713, 742, 801, 834, 1006, 1030, 1036, 1119, 1418, 2896, 3353, 3667, 3813, 4367, 4516, 5042, 5638, 6058, 6101, 6469]
+        cnt = 0
+        with open(corpusIn) as IN, open(jsonIn) as JSON:
+            for cline, jline in tqdm(list(zip(IN.readlines(), JSON.readlines()))):
+                #old freebase Linker
+                #ner = list(set(map(lambda x:x[0].strip().replace(' ','_').lower(), json.loads(jline)['ner'])))
+                #wikidata Linker
+                ner = json.loads(jline)['ner']
+                d = self.Linker.expand(ner, 1)
                 self.tuples += d
                 self.texts.append(cline)
+        print(self.tuples)
         self.num_docs = len(self.texts)
-        
+
+    def _load_corpus(self, corpusIn):
+        with open(corpusIn) as IN:
+            self.texts = IN.readlines()
+        self.num_docs = len(self.texts)
             
     def buildTrain(self, window_size = 5, attn = False):
         #assert len(self.data) == len(self.kws)

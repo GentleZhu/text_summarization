@@ -23,6 +23,24 @@ class DistMult(nn.Module):
         # See the autograd section for explanation of what happens here.
         return input * self.weight[idx, :]
 
+class BiLinear(nn.Module):
+    def __init__(self, num_classes, input_features):
+        super(DistMult, self).__init__()
+        # nn.Parameter is a special kind of Variable, that will get
+        # automatically registered as Module's parameter once it's assigned
+        # as an attribute. Parameters and buffers need to be registered, or
+        # they won't appear in .parameters() (doesn't apply to buffers), and
+        # won't be converted when e.g. .cuda() is called. You can use
+        # .register_buffer() to register buffers.
+        # nn.Parameters can never be volatile and, different than Variables,
+        # they require gradients by default.
+        self.weight = nn.Parameter(t.randn(num_classes, input_features, input_features), requires_grad=True)
+
+    def forward(self, idx, input_x, input_y):
+        # See the autograd section for explanation of what happens here.
+        return input_x * self.weight[idx, :]
+
+
 class KnowledgeAwareAttention(nn.Module):
     """
     A knowledge aware attention layer where the attention weight is calculated as
