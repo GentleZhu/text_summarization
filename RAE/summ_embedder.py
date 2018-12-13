@@ -23,14 +23,15 @@ relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69
 #P106 occupation P1344 participant P17 country P69 educate P647 draft at
 
 ### Comment below lines 
-if False:
+if True:
 	#mapper='/shared/data/qiz3/text_summ/input_data/FB_en_mapper.map'
 	#tmp.load_ent_mapper(mapper)
 	tmp = WikidataLinker(relation_list)
 	graph_builder = textGraph(tmp)
 	graph_builder.load_stopwords('/shared/data/qiz3/text_summ/data/stopwords.txt')
-	graph_builder._load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.txt')
-	#graph_builder.load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.token', '/shared/data/qiz3/text_summ/data/NYT_sports.json')
+	#graph_builder._load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.txt')
+	graph_builder.load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.token', '/shared/data/qiz3/text_summ/data/NYT_sports.json', attn=True)
+	sys.exit(-1)
 	graph_builder.normalize_text()
 	graph_builder.build_dictionary()
 	graph_builder.text_to_numbers()
@@ -45,6 +46,7 @@ else:
 	y = save_point['y']
 	num_docs = save_point['num_docs']
 	num_words = save_point['num_words']
+
 
 print("There are {} documents, and {} words in total".format(num_docs, num_words))
 dataset = RAEDataset(X, y)
@@ -77,7 +79,7 @@ for epoch in range(config['epoch_number']):
 		sparse_optimizer.step()
 		if dense_optimizer:
 			dense_optimizer.step()
-	if epoch % 2 == 0:
+	if epoch % 5 == 0:
 		model_path = "{}{}_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], epoch)
 		t.save(model.state_dict(), model_path)
 	print("Epoch:{}, Loss:{}, Relational Bias:{}".format(epoch, sum(test_loss), sum(relational_bias)))

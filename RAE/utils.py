@@ -6,6 +6,7 @@ import tarfile
 import collections
 import numpy as np
 from tqdm import tqdm
+from collections import defaultdict
 
 class textGraph(object):
     """docstring for textGraph"""
@@ -113,25 +114,37 @@ class textGraph(object):
             tup_data.append(tup[-1])
             self.tuple_data.append(tup_data)
 
-    def load_corpus(self, corpusIn, jsonIn):
+    def load_corpus(self, corpusIn, jsonIn, attn = False):
         #sports = [27, 30, 32, 41, 65, 201, 239, 297, 422, 427, 441, 669, 694, 713, 742, 801, 834, 1006, 1030, 1036, 1119, 1418, 2896, 3353, 3667, 3813, 4367, 4516, 5042, 5638, 6058, 6101, 6469]
         cnt = 0
+        ner_set = set()
         with open(corpusIn) as IN, open(jsonIn) as JSON:
-            for cline, jline in tqdm(list(zip(IN.readlines(), JSON.readlines()))):
+            for cline, jline in tqdm(list(zip(IN.readlines()[:1000], JSON.readlines()[:1000]))):
+            #for cline, jline in zip(IN.readlines(), JSON.readlines()):
                 #old freebase Linker
                 #ner = list(set(map(lambda x:x[0].strip().replace(' ','_').lower(), json.loads(jline)['ner'])))
                 #wikidata Linker
                 ner = json.loads(jline)['ner']
-                d = self.Linker.expand(ner, 1)
-                self.tuples += d
+                if attn:
+                    ner_set = ner_set.union(set(map(lambda x:x[0], ner)))
+                else:
+                    d = self.Linker.expand(ner, 1)
+                    self.tuples += d
                 self.texts.append(cline)
-        print(self.tuples)
+        #print(self.tuples, ner_set)
+        d = self.Linker.expand(list(ner_set), 1)
+        stats = defaultdict(int)
+        for dd in d:
+            stats[(dd[1],dd[2])] += 1
+        stats = stats.items()
+        print(sorted(stats, key = lambda x:x[1], reverse = True))
         self.num_docs = len(self.texts)
 
     def _load_corpus(self, corpusIn):
         with open(corpusIn) as IN:
             self.texts = IN.readlines()
         self.num_docs = len(self.texts)
+
             
     def buildTrain(self, window_size = 5, attn = False):
         #assert len(self.data) == len(self.kws)
@@ -156,6 +169,10 @@ class textGraph(object):
         label_data = np.transpose(np.array([outputs]))
         print("Training data stats: records {}, kb pairs {}".format(batch_data.shape[0], len(self.tuple_data)))
         return batch_data, label_data, self.num_docs, self.num_words
+
+    def buildTrain_(self, num_sampled = 5):
+        inputs, outputs = [], []
+
 
 
 # Generate data randomly (N words behind, target, N words ahead)
