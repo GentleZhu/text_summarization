@@ -81,7 +81,7 @@ class WikidataLinker:
 			new_kws={} 
 			candidates = defaultdict(int)
 			#print('hop ',current_hop,'done.') 
-			current_hop+=1
+			current_hop += 1
 		#for kw in kws:
 			#print(self.wid2title(kw),)
 		facts = []
@@ -94,14 +94,16 @@ class WikidataLinker:
 					self.property[p]+=1	
 					k_title=self.wid2title(k)
 					l_title=self.wid2title(l)
-					if k_title =='' or l_title=='':
+					if k_title =='' or l_title=='' or l == 'Q4167410':
 						continue
-					facts.append([k_title.replace(' ','_').lower(), l_title.replace(' ','_').lower(), p])
+					#facts.append([k_title.replace(' ','_').lower(), l_title.replace(' ','_').lower(), p])
+					facts.append([k_title, l_title, p])
 		return facts
 
 	def expand(self,doc_list,num_hop):
 		phrases=self.load_kws(doc_list)
 		kws={}
+		print(phrases)
 		for phrase in phrases:
 			wid=self.title2wid(phrase)
 			if  wid !='':
@@ -120,10 +122,11 @@ class WikidataLinker:
 	def load_kws(self,input_keywords):
 		input_kws = []
 		for tp in input_keywords:
-			word=tp[0]
-			ner_type=tp[3]
-			if ner_type =='TIME' or ner_type=='DATE' or ner_type=='CARDINAL' or ner_type=='ORDINAL' or ner_type=='GPE':
-				continue
+			word=tp
+			if False:
+				ner_type=tp[3]
+				if ner_type =='TIME' or ner_type=='DATE' or ner_type=='CARDINAL' or ner_type=='ORDINAL' or ner_type=='GPE':
+					continue
 			if word not in input_kws:
 				input_kws.append(word)
 		return input_kws
