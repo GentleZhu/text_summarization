@@ -1,6 +1,6 @@
 #Preprocessing
 import sys
-sys.path.append('../src/RAE/')
+sys.path.append('RAE/')
 from WikidataLinker_mg import WikidataLinker
 from tqdm import tqdm
 from utils import textGraph
