@@ -10,6 +10,8 @@ from IPython import embed
 from collections import defaultdict
 from copy import deepcopy
 import pickle
+import operator
+import math
 
 class textGraph(object):
     """docstring for textGraph"""
@@ -118,7 +120,42 @@ class textGraph(object):
             self.tuple_data.append(tup_data)
 
     def load_corpus(self, corpusIn, jsonIn, attn = False):
-        #sports = [27, 30, 32, 41, 65, 201, 239, 297, 422, 427, 441, 669, 694, 713, 742, 801, 834, 1006, 1030, 1036, 1119, 1418, 2896, 3353, 3667, 3813, 4367, 4516, 5042, 5638, 6058, 6101, 6469]
+        cnt = 0
+        ner_set = defaultdict(int)
+        ner_types = set()
+        with open(corpusIn) as IN, open(jsonIn) as JSON:
+            for cline, jline in tqdm(list(zip(IN.readlines(), JSON.readlines()))):
+                ner = json.loads(jline)['ner']
+                for n in ner:
+                    ner_types.add(n[-1])
+                    if n[-1] in ['ORDINAL', 'CARDINAL']:
+                        continue
+                    ner_set[n[0]] += 1
+                #else:
+                #    d = self.Linker.expand(ner, 1)
+                #    self.tuples += d
+                self.texts.append(cline)
+        filtered = [(k, ner_set[k]) for k in ner_set if ner_set[k] > 30]
+
+        d, t2wid, wid2surface = self.Linker.expand([t[0] for t in filtered], 2)
+
+        stats = defaultdict(int)
+        for dd in d:
+            stats[(dd[1],dd[2])] += 1
+        stats = stats.items()
+        #print(sorted(stats, key = lambda x:x[1], reverse = True))
+        self.num_docs = len(self.texts)
+
+        hierarchy = Hierarchy(d)
+
+        return hierarchy, t2wid, wid2surface
+
+    def load_concepts(self, concepts):
+        for concept in concepts:
+            self.tuples.extend(concept.output_concepts())
+
+    # backup functions
+    def _load_corpus(self, corpusIn, jsonIn, attn = False):
         cnt = 0
         ner_set = defaultdict(int)
         ner_types = set()
@@ -139,54 +176,20 @@ class textGraph(object):
                     d = self.Linker.expand(ner, 1)
                     self.tuples += d
                 self.texts.append(cline)
-        #print(self.tuples, ner_set)
-
-        #filtered = [(k, ner_set[k]) for k in ner_set]
         filtered = [(k, ner_set[k]) for k in ner_set if ner_set[k] > 30]
-        #filtered = sorted(filtered, key=lambda t:-t[1])
 
-        d, t2wid, wid2original = self.Linker.expand([t[0] for t in filtered], 2)
-        #one_hop_expanded = [t[0] for t in d]
+        d, t2wid, wid2surface = self.Linker.expand([t[0] for t in filtered], 2)
 
         stats = defaultdict(int)
         for dd in d:
             stats[(dd[1],dd[2])] += 1
         stats = stats.items()
-        print(sorted(stats, key = lambda x:x[1], reverse = True))
+        # print(sorted(stats, key = lambda x:x[1], reverse = True))
         self.num_docs = len(self.texts)
-
-        #h = self.construct_hierarchies(d)
-        #hierarchies = {k: h[k] for k in h if len(h[k]) >= 3}
-        #ranked_list = [(k[0], self.cnt_freq(h, k[0], ner_set, 1)) for k in h]
-        #ranked_list = sorted(ranked_list, key=lambda t: -t[1])
 
         hierarchy = Hierarchy(d)
 
         return hierarchy
-
-    def construct_hierarchies(self, links):
-        hierarchies = defaultdict(list)
-        for link in links:
-            hierarchies[(link[-2], link[-1])].append(link[0])
-        #hierarchies = {k: hierarchies[k] for k in hierarchies if len(hierarchies[k]) >= 5}
-        return hierarchies
-
-    def cnt_freq(self, hier, entity, ner_cnt, depth):
-        if entity not in map(lambda t:t[0], hier.keys()) or depth >= 3:
-            return ner_cnt[entity] if entity in ner_cnt else 0
-        accum = 0
-        for i in range(1, len(self.Linker.relation_list) + 1):
-            if not (entity, i) in hier:
-                continue
-            for child in hier[(entity, i)]:
-                accum += self.cnt_freq(hier, child, ner_cnt, depth+1)
-        return accum
-
-    # backup functions
-    def _load_corpus(self, corpusIn):
-        with open(corpusIn) as IN:
-            self.texts = IN.readlines()
-        self.num_docs = len(self.texts)
 
             
     def buildTrain(self, window_size = 5, attn = False):
@@ -315,14 +318,14 @@ class Hierarchy:
             if node[1] > 0:
                 self.non_leaves.add(node)
 
-    def count_entity(self, ner_count, t2wid, wid2original):
+    def count_entity(self, ner_count, t2wid, wid2surface):
         self.entity_count = defaultdict(int)
         layer_num = len(self.layer_node)
         for l in range(layer_num):
             nodes = self.layer_node[l]
             if l == 0:
                 for node in nodes:
-                    self.entity_count[node] = sum([ner_count[t] for t in wid2original[t2wid[node[0]]]])
+                    self.entity_count[node] = sum([ner_count[t] for t in wid2surface[t2wid[node[0]]]])
             else:
                 for node in nodes:
                     for relation in self.p2c[node]:
@@ -332,16 +335,6 @@ class Hierarchy:
         ranked_hiers = [(k, self.entity_count[k]) for k in self.entity_count]
         ranked_hiers = sorted(ranked_hiers, key=lambda t: -t[1])
         return ranked_hiers
-
-    def rank_hierarchies(self):
-        ranked_list = []
-        for node in self.non_leaves:
-            for relation in self.p2c[node]:
-                if len(self.p2c[node][relation]) <= 3:
-                    continue
-                ranked_list.append((node, relation, np.mean([self.entity_count[t] for t in self.p2c[node][relation]])))
-        ranked_list = sorted(ranked_list, key=lambda t:-t[2])
-        return ranked_list
 
     def ner_linkable(self, ner):
         return (ner, 0) in self.entity_node
@@ -381,8 +374,7 @@ class Concept(object):
 
             if v[1] > 0:
                 self.dfs(v, relations, depth+1)
-            else:
-                self.links[v[0]].append(node[0])
+            self.links[v[0]].append([node[0], relations[depth]])
 
     def construct_concepts(self, _concept):
         self.height = len(_concept[1])
@@ -390,78 +382,116 @@ class Concept(object):
         self.root = _concept[0]
         relations = _concept[1]
         self.dfs(self.root, relations, 0)
-    
+
+    def output_concepts(self):
+        output_tuple = []
+        for k,vl in self.links.items():
+            for v in vl:
+                output_tuple.append([k.lower().replace(' ', '_'), v[0].lower().replace(' ', '_'), v[1]])
+        return output_tuple
+
+
     def concept_link(self, phrases):
         linked_nodes = set()
         for p in phrases:
             if p in self.links:
-                linked_nodes = linked_nodes.union(self.links[p])
+                linked_nodes = linked_nodes.union(map(lambda x:x[0], self.links[p]))
         return linked_nodes
 
+def rank_hierarchies(hierarchy, option='A'):
+    ranked_list = []
+    for node in hierarchy.non_leaves:
+        for relation in hierarchy.p2c[node]:
+            if len(hierarchy.p2c[node][relation]) <= 3:
+                continue
+            if option == 'A':
+                freqs = [hierarchy.entity_count[t] for t in hierarchy.p2c[node][relation]]
+                score = np.mean(freqs)
+                #if max(freqs) / sum(freqs) > 0.5:
+                #    score = 0
+            elif option in ['B', 'C', 'D']:
+                freqs = [hierarchy.entity_count[t] for t in hierarchy.p2c[node][relation]]
+                avg0 = np.mean(freqs)
+                s = sum(freqs)
+                freqs = [t / s for t in freqs]
+                avg = np.mean(freqs)
+                var = np.mean([(t - avg) ** 2 for t in freqs])
+                if option == 'B':
+                    score = math.log(s) * 1.0 / (var + 0.1)
+                elif option == 'C':
+                    score = 1.0 / (var + 0.1)
+                else:
+                    score = avg0 * 1.0 / (var + 0.1)
+            elif option == 'E':
+                freqs = [hierarchy.entity_count[t] for t in hierarchy.p2c[node][relation]]
+                score = sum(freqs)
+                freqs = [t / score for t in freqs]
+                if max(freqs) > 0.5:
+                    score = 0
+            else:
+                score = 0
+            ranked_list.append((node, relation, score))
+    ranked_list = sorted(ranked_list, key=lambda t:-t[2])
+    return ranked_list
 
-def doc_assign(hierarchy, target_docs, t2wid, wid2original, json_path='/shared/data/qiz3/text_summ/data/NYT_sports.json'):
-    def extract_subnodes(selected_nodes):
-        subnodes = deepcopy(selected_nodes)
-        current = deepcopy(selected_nodes)
-        temp = set()
-        while 1:
-            for node in current:
-                for relation in hierarchy.p2c[node]:
-                    for c in hierarchy.p2c[node][relation]:
-                        temp.add(c)
-            if len(temp) == 0:
-                break
-            current = deepcopy(temp)
-            temp = set()
-            subnodes |= current
-        return subnodes
-
+def extract_phrases(target_docs, json_path='/shared/data/qiz3/text_summ/data/NYT_sports.json'):
     JSON = open(json_path)
     ner_cnt = defaultdict(int)
-    wid2t = {t2wid[k]: k for k in t2wid}
-    original2wid = {t: k for k in wid2original for t in wid2original[k]}
-    for idx, jline in tqdm(enumerate(JSON.readlines())):
+    for idx, jline in tqdm(enumerate(list(JSON.readlines()))):
         if idx not in target_docs:
             continue
         ner = json.loads(jline)['ner']
         for n in ner:
             if n[-1] in ['ORDINAL', 'CARDINAL']:
                 continue
-            if n[0] in original2wid and original2wid[n[0]] in wid2t and \
-                            (wid2t[original2wid[n[0]]], 0) in hierarchy.entity_node:
-                ner_cnt[n[0]] += 1
+            ner_cnt[n[0]] += 1
+            #if n[0] in surface2wid and surface2wid[n[0]] in wid2t:
+            #    ner_cnt[wid2t[surface2wid[n[0]]]] += 1
 
-    entity_count = defaultdict(int)
-    selected_nodes = set([('state of the United States', 1), ('type of sport', 2), ('human', 1)])
-    layer_num = len(hierarchy.layer_node)
-    for l in range(layer_num):
-        nodes = hierarchy.layer_node[l]
-        if l == 0:
-            for node in nodes:
-                entity_count[node] = sum([ner_cnt[t] for t in wid2original[t2wid[node[0]]]])
-        else:
-            for node in nodes:
-                for relation in hierarchy.p2c[node]:
-                    for c in hierarchy.p2c[node][relation]:
-                        entity_count[node] += entity_count[c]
+    return ner_cnt
 
-    ranked_list = []
-    for node in extract_subnodes(selected_nodes):
-        if node[0] == 0 or entity_count[node] == 0:
-            continue
-        for relation in hierarchy.p2c[node]:
-            child_cnt = [entity_count[t] for t in hierarchy.p2c[node][relation]]
-            if len(child_cnt) <= 3:
+def background_assign(concept, t2wid, wid2surface, target_docs = None, json_path='/shared/data/qiz3/text_summ/data/NYT_sports.json'):
+    wid2t = {t2wid[k]: k for k in t2wid}
+    surface2wid = {t: k for k in wid2surface for t in wid2surface[k]}
+    assignment = defaultdict(list)
+    target_assigment = []
+    JSON = open(json_path)
+    for idx, jline in enumerate(tqdm(list(JSON.readlines()))):
+        ner_cnt = defaultdict(int)
+        ner = json.loads(jline)['ner']
+        for n in ner:
+            if n[-1] in ['ORDINAL', 'CARDINAL']:
                 continue
-            score = max(child_cnt)
-            ranked_list.append(((node, relation), score))
+            ner_cnt[n[0]] += 1
+        assigned_node = doc_assign(concept, wid2t, surface2wid, ner_cnt)
+        if assigned_node:
+            assignment[assigned_node].append(idx)
+        if target_docs and idx in target_docs:
+            target_assigment.append(assigned_node)
 
-    ranked_list = sorted(ranked_list, key=lambda t:-t[1])
+    return assignment, target_assigment
 
-    embed()
-    exit()
+def doc_assign(concept, wid2t, surface2wid, ner_cnt):
+    tmp_cnt = {}
+    for k in ner_cnt:
+        if k in surface2wid and surface2wid[k] in wid2t:
+            tmp_cnt[wid2t[surface2wid[k]]] = ner_cnt[k]
+    ner_cnt = tmp_cnt
 
+    linked_nodes = concept.concept_link(ner_cnt.keys())
+    aggre_cnt = defaultdict(int)
+    for x in ner_cnt:
+        if x in concept.links:
+            for node in concept.links[x]:
+                #if node == 'basketball':
+                #    aggre_cnt[x] += 1
+                aggre_cnt[node] += 1
 
+    aggre_cnt = dict(aggre_cnt)
+    if len(aggre_cnt) == 0:
+        return None
+    assigned_node = max(aggre_cnt.items(), key=operator.itemgetter(1))[0]
+    return assigned_node
 
 # Generate data randomly (N words behind, target, N words ahead)
 def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):

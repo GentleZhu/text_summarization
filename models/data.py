@@ -2,7 +2,7 @@ import torch
 from torch.utils import data
 
 #TODO: move negative samples from model to here
-class RAEDataset(data.Dataset):
+class SummDataset(data.Dataset):
   'Characterizes a dataset for PyTorch'
   def __init__(self, list_IDs, labels):
         'Initialization'

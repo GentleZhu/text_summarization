@@ -117,7 +117,7 @@ class KnowledgeD2V(nn.Module):
             #assert r_output.size()[1] == 6
             #return self.nce_loss(r_output)
             
-            return self.nce_loss(r_output), self.nce_loss(r_output).float()
+            return self.nce_loss(r_output) + self.nce_loss(output), self.nce_loss(r_output).float()
         
         return self.nce_loss(output), 0.0
 

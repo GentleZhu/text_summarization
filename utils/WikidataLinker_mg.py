@@ -85,7 +85,7 @@ class WikidataLinker:
 
 		facts = []
 		t2wid = {}
-		for i,k in enumerate(list(kws.keys())):
+		for i,k in tqdm(enumerate(list(kws.keys()))):
 			for j,l in enumerate(list(kws.keys())):
 				if k == l:
 					continue
@@ -106,14 +106,14 @@ class WikidataLinker:
 		phrases=self.load_kws(doc_list)
 		kws={}
 		#print(phrases)
-		wid2original = defaultdict(list)
+		wid2surface = defaultdict(list)
 		for phrase in phrases:
 			wid=self.title2wid(phrase)
 			if  wid !='':
 				kws[wid]=1
-				wid2original[wid].append(phrase)
+				wid2surface[wid].append(phrase)
 		facts, t2wid = self.retrieve_facts(kws,num_hop)
-		return facts, t2wid, wid2original
+		return facts, t2wid, wid2surface
 		
 		#for p,count in self.property.items():
 		#	self.p_list.append((p,count))
