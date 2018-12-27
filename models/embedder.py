@@ -16,7 +16,7 @@ def Train(config, X, y, num_words, num_docs):
 		t.cuda.set_device(int(config['gpu']))
 
 		model = KnowledgeD2V(num_words=num_words, num_docs=num_docs, embed_size=config['emb_size'], 
-			kb_emb_size=config['kb_emb_size'], relational_bias=relation_list)
+			kb_emb_size=config['kb_emb_size'], relational_bias=config['relation_list'])
 		sparse_optimizer = SparseAdam(params=[{'params': model.word_embed.parameters()},
 			{'params': model.out_embed.parameters()},
 			{'params': model.doc_embed.parameters()}

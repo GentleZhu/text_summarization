@@ -11,7 +11,7 @@ from IPython import embed
 relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
 config = {'batch_size': 128, 'epoch_number': 50, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':0,
 		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_sports', 'method':'knowledge2vec',
-		'preprocess': True}
+		'preprocess': False, 'relation_list':relation_list}
 
 #P54 team P31 instance of P27 nationality P641 sports P413 position
 #P106 occupation P1344 participant P17 country P69 educate P279 subclass of P463 member of P641 sport
@@ -54,6 +54,7 @@ else:
 
 
 #Interface of using various embeddings
+print("Training Embedding")
 embedder.Train(config, X, y, num_words, num_docs)
 
 
