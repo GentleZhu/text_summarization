@@ -7,3 +7,11 @@ One topdown path of above concept could be `sports team - Basketball Team - Los 
 concept = Concept(h)
 concept.construct_concepts([(u'type of sport', 2), [2,4]])
 ```
+
+## Run and configuration
+```
+python summ_pipeline.py
+```
+
+## Assign background corpus to category of interest
+If we want to assign documents to one dimension, for example, sports "baseball, basketball, football and etc.". We will just need top@k relevant documents to these category nodes.
