@@ -3,7 +3,7 @@ from tqdm import tqdm
 from data import SummDataset
 import torch.utils.data as tdata
 from model import KnowledgeD2V
-from torch.optim import Adam, SparseAdam
+from torch.optim import Adam, SparseAdam, SGD
 import torch as t
 import pickle
 
@@ -17,6 +17,8 @@ def Train(config, X, y, num_words, num_docs):
 
 		model = KnowledgeD2V(num_words=num_words, num_docs=num_docs, embed_size=config['emb_size'], 
 			kb_emb_size=config['kb_emb_size'], relational_bias=config['relation_list'])
+
+		
 		sparse_optimizer = SparseAdam(params=[{'params': model.word_embed.parameters()},
 			{'params': model.out_embed.parameters()},
 			{'params': model.doc_embed.parameters()}
@@ -27,6 +29,7 @@ def Train(config, X, y, num_words, num_docs):
 				], lr=0.01)
 		else:
 			dense_optimizer = None
+
 		model.cuda()
 		for epoch in range(config['epoch_number']):
 			test_loss, relational_bias = [], []

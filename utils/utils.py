@@ -15,7 +15,7 @@ import math
 
 class textGraph(object):
     """docstring for textGraph"""
-    def __init__(self, arg):
+    def __init__(self, arg=None):
         super(textGraph, self).__init__()
         self.name2id = dict()
         self.id2name = dict()
@@ -125,30 +125,32 @@ class textGraph(object):
         ner_types = set()
         with open(corpusIn) as IN, open(jsonIn) as JSON:
             for cline, jline in tqdm(list(zip(IN.readlines(), JSON.readlines()))):
-                ner = json.loads(jline)['ner']
-                for n in ner:
-                    ner_types.add(n[-1])
-                    if n[-1] in ['ORDINAL', 'CARDINAL']:
-                        continue
-                    ner_set[n[0]] += 1
+                if attn:
+                    ner = json.loads(jline)['ner']
+                    for n in ner:
+                        ner_types.add(n[-1])
+                        if n[-1] in ['ORDINAL', 'CARDINAL']:
+                            continue
+                        ner_set[n[0]] += 1
                 #else:
                 #    d = self.Linker.expand(ner, 1)
                 #    self.tuples += d
                 self.texts.append(cline)
-        filtered = [(k, ner_set[k]) for k in ner_set if ner_set[k] > 30]
+        if attn:
+            filtered = [(k, ner_set[k]) for k in ner_set if ner_set[k] > 30]
 
-        d, t2wid, wid2surface = self.Linker.expand([t[0] for t in filtered], 2)
+            d, t2wid, wid2surface = self.Linker.expand([t[0] for t in filtered], 2)
 
-        stats = defaultdict(int)
-        for dd in d:
-            stats[(dd[1],dd[2])] += 1
-        stats = stats.items()
+            stats = defaultdict(int)
+            for dd in d:
+                stats[(dd[1],dd[2])] += 1
+            stats = stats.items()
+            hierarchy = Hierarchy(d)
         #print(sorted(stats, key = lambda x:x[1], reverse = True))
         self.num_docs = len(self.texts)
 
-        hierarchy = Hierarchy(d)
-
-        return hierarchy, t2wid, wid2surface
+        if attn:
+            return hierarchy, t2wid, wid2surface
 
     def load_concepts(self, concepts):
         for concept in concepts:

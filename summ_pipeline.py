@@ -17,22 +17,26 @@ config = {'batch_size': 128, 'epoch_number': 50, 'emb_size': 100, 'kb_emb_size':
 #P106 occupation P1344 participant P17 country P69 educate P279 subclass of P463 member of P641 sport
 
 if config['preprocess']:
-	print("Extracting Hierarchies")
+	
 	tmp = WikidataLinker(relation_list)
 	graph_builder = textGraph(tmp)
 	graph_builder.load_stopwords('/shared/data/qiz3/text_summ/data/stopwords.txt')
 	#graph_builder._load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.txt')
-	h, t2wid, wid2surface = graph_builder.load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.token', '/shared/data/qiz3/text_summ/data/NYT_sports.json', attn=True)
+	print("Extracting Hierarchies")
+	if len(config['relation_list']) > 0:
+		h, t2wid, wid2surface = graph_builder.load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.token', '/shared/data/qiz3/text_summ/data/NYT_sports.json', attn=True)
+	
+		# Example usage of creating concept from hierarchies
+		concepts = []
+		concept_configs = [[(u'type of sport', 2), [2,4]]]
+		for con_config in concept_configs:
+			concept = Concept(h)
+			concept.construct_concepts(con_config)
+			concepts.append(concept)
 
-	# Example usage of creating concept from hierarchies
-	concepts = []
-	concept_configs = [[(u'type of sport', 2), [2,4]]]
-	for con_config in concept_configs:
-		concept = Concept(h)
-		concept.construct_concepts(con_config)
-		concepts.append(concept)
-
-	graph_builder.load_concepts(concepts)
+		graph_builder.load_concepts(concepts)
+	else:
+		graph_builder.load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.token', '/shared/data/qiz3/text_summ/data/NYT_sports.json', attn=False)
 	graph_builder.normalize_text()
 	graph_builder.build_dictionary()
 	graph_builder.text_to_numbers()
@@ -60,5 +64,5 @@ embedder.Train(config, X, y, num_words, num_docs)
 
 
 # Assign documents on specific node(hard), very basic baseline
-assignments = background_assign(concept, t2wid, wid2surface)
-embed()
+#assignments = background_assign(concept, t2wid, wid2surface)
+#embed()
