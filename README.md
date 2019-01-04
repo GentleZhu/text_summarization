@@ -21,7 +21,7 @@ By diversified ranking between twin documents and sibling documents, we obtain v
 
 ## Comparative and Contrastive Analysis
 We conduct summarization based on twin and target documents.
-Currently the output is just ranked list based on w_i(freq difference) and n_i(coverage in target), and haven't implemented redundancy part.
+Currently the output is just ranked list based on w_i(freq difference) and n_i(coverage in target), calculated in function "contrastive_analysis", and haven't implemented redundancy part.
 ```
 python summarizer.py
 ```
