@@ -1,8 +1,8 @@
 import sys
 from tqdm import tqdm
 import pickle
-sys.path.append('./models/')
-sys.path.append('./utils/')
+sys.path.append('../models/')
+sys.path.append('../utils/')
 from utils import textGraph
 import torch
 import json
@@ -85,9 +85,13 @@ if __name__ == '__main__':
     config = {'batch_size': 128, 'epoch_number': 20, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':0,
         'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_sports', 'method':'knowledge2vec',
         'preprocess': False, 'relation_list':relation_list}
-    graph_builder = textGraph()
-    graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+    #graph_builder = textGraph()
+    #graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
     gt_labels, labels = load_labels('/shared/data/qiz3/text_summ/NYT_sports.json')
+
+    embed()
+    exit()
+
     model = load_model(config)
     assert(model.doc_embeddings().shape[0] == len(gt_labels))
     label2emb = dict()

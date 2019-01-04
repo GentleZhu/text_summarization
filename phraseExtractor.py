@@ -116,7 +116,7 @@ class phraseExtractor:
             int_score = self.int_score[entity] if entity in self.int_score else 0.3
             score = int_score * distinctiveness
         elif score_option == 'H':
-            int_score = self.int_score[entity] if entity in self.int_score else 0.
+            int_score = self.int_score[entity] if entity in self.int_score else 0.3
             score = int_score * popularity
         else:
             raise NotImplementedError
@@ -134,7 +134,7 @@ class phraseExtractor:
         self.load_freq_data(document_phrase_cnt, inverted_index)
         self._calculate_sibling_max_df()
         if score_option in ['D', 'E', 'F', 'H']:
-            self.read_int('/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/sports/intermediate/AutoPhrase_multi-words.txt')
+            self.read_int('/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/sports/intermediate/AutoPhrase.txt')
         print('Start calculating scores...')
         for entity in tqdm(self.entity_candidates):
             if score_option == 'G':
@@ -143,8 +143,6 @@ class phraseExtractor:
                     score = 0.
             else:
                 score = self._compute_entity_score(entity, score_option)
-                if '_' not in entity:
-                    score = 0.
             self.ranked_list.append((entity, score))
 
         self.ranked_list = sorted(self.ranked_list, key=lambda t: -t[1])

@@ -34,7 +34,7 @@ def select_phrases(relevance_score, similarity_score, weight, k):
     reference_vector = np.dot(relevance_score, similarity_score)
     #reference_vector = np.ones(relevance_score.shape[0])
     score = weight * (reference_vector * relevance_score) - np.diag(similarity_score) * relevance_score * relevance_score
-    selected_indices = set()
+    selected_indices = list()
     for i in range(k):
         current_max = -1
         ret = 0
@@ -44,7 +44,7 @@ def select_phrases(relevance_score, similarity_score, weight, k):
             if x > current_max:
                 current_max = x
                 ret = idx
-        selected_indices.add(ret)
+        selected_indices.append(ret)
         score = score - 2 * relevance_score[ret] * (similarity_score[:, ret] * relevance_score)
     return selected_indices
 
@@ -86,7 +86,7 @@ def generate_caseOLAP_scores(sibling_groups, target_set, document_phrase_cnt, in
             target_phrase_freq[phrase] += document_phrase_cnt[idx][phrase]
 
     phrase_extractor = phraseExtractor(phrase_candidates, phrase2idx, target_set, sibling_groups, target_phrase_freq)
-    ranked_list = phrase_extractor.compute_scores(document_phrase_cnt, inverted_index, 'A')
+    ranked_list = phrase_extractor.compute_scores(document_phrase_cnt, inverted_index, 'D')
     scores = np.array([0.0 for _ in range(len(ranked_list))])
 
     for t in ranked_list:
@@ -135,16 +135,16 @@ def sub_modular(emb, candidate_phrases, k, weight):
 def calculate_pairwise_similarity(phrase2idx):
     # phrase2idx: dict, {'USA':1, ... }
     idx2phrase = {phrase2idx[k]:k for k in phrase2idx}
-    #similarity_scores = np.zeros([len(phrase2idx), len(phrase2idx)])
+    similarity_scores = np.zeros([len(phrase2idx), len(phrase2idx)])
     print('Calculate pairwise similarity...')
-    #for i in tqdm(range(len(phrase2idx))):
-    #    for j in range(len(phrase2idx)):
-    #        if j < i:
-    #            similarity_scores[i][j] = similarity_scores[j][i]
-    #        else:
-    #            similarity_scores[i][j] = 1.0 / (1 + leven_similarity(idx2phrase[i], idx2phrase[j]))
+    for i in tqdm(range(len(phrase2idx))):
+        for j in range(len(phrase2idx)):
+            if j < i:
+                similarity_scores[i][j] = similarity_scores[j][i]
+            else:
+                similarity_scores[i][j] = 1.0 / (1 + leven_similarity(idx2phrase[i], idx2phrase[j]))
     #similarity_scores = np.zeros([len(phrase2idx), len(phrase2idx)])
-    similarity_scores = np.eye(len(phrase2idx))
+    #similarity_scores = np.eye(len(phrase2idx))
     return similarity_scores, idx2phrase
 
 def contrastive_analysis(document_phrase_cnt, background_phrases, twin, target):
@@ -184,7 +184,6 @@ def main():
     document_phrase_cnt, inverted_index = collect_statistics()
     siblings, twin_docs = load_doc_sets()
     phrase2idx = generate_candidate_phrases(document_phrase_cnt, twin_docs)
-    similarity_scores, idx2phrase = calculate_pairwise_similarity(phrase2idx)
 
     #similarity_scores = pickle.load(open('similarity_score.p', 'rb'))
     #idx2phrase = pickle.load(open('idx2phrase.p', 'rb'))
@@ -193,12 +192,16 @@ def main():
 
     scores, ranked_list = generate_caseOLAP_scores(siblings, twin_docs, document_phrase_cnt, inverted_index, phrase2idx)
 
+    embed()
+
+    similarity_scores, idx2phrase = calculate_pairwise_similarity(phrase2idx)
+
     #scores = pickle.load(open('tmp_scores.dump','rb'))
     #pickle.dump(scores, open('tmp_scores.dump','wb'))
 
     selected_index = select_phrases(scores, similarity_scores, 2, 1000)
     phrases = [idx2phrase[k] for k in selected_index]
-    ranked_list, phrase_rescore = contrastive_analysis(document_phrase_cnt, phrases, twin_docs, target_docs)
+    #ranked_list, phrase_rescore = contrastive_analysis(document_phrase_cnt, phrases, twin_docs, target_docs)
     embed()
     exit()
 
