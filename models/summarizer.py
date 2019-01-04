@@ -7,6 +7,7 @@ sys.path.append('../')
 
 from collections import defaultdict
 import pickle
+import scipy
 from phraseExtractor import phraseExtractor
 
 def leven_similarity(phrase_a, phrase_b):
@@ -92,6 +93,45 @@ def generate_caseOLAP_scores(sibling_groups, target_set, document_phrase_cnt, in
         scores[phrase2idx[t[0]]] = t[1]
     return scores,ranked_list
 
+def calc_sim(emb, phrase_a, phrase_b):
+    ###########################
+    # Still buggy, not tested #
+    ###########################
+    vec_a, vec_b = emb[phrase_a], emb[phrase_b]
+    return 1 - scipy.spatial.distance.cosine(vec_a, vec_b)
+
+def sub_modular(emb, candidate_phrases, k, weight):
+    ###########################
+    # Still buggy, not tested #
+    ###########################
+    selected = set()
+    unselected = set(candidate_phrases)
+    current_score = 0.
+    for i in range(k):
+        current_max = -1
+        choice = ''
+        for phrase in candidate_phrases:
+            if phrase in selected:
+                continue
+            tmp_score = current_score
+            for phrase_ in selected:
+                tmp_score -= calc_sim(emb, phrase, phrase_)
+                tmp_score -= weight * calc_sim(emb, phrase, phrase_)
+            for phrase_ in unselected:
+                if phrase == phrase_:
+                    continue
+                tmp_score += calc_sim(emb, phrase, phrase_)
+            if tmp_score > current_max:
+                current_max = tmp_score
+                choice = phrase
+        if current_max > current_score:
+            current_score = current_max
+            selected.add(choice)
+            unselected -= choice
+        else:
+            break
+    return selected
+
 def calculate_pairwise_similarity(phrase2idx):
     # phrase2idx: dict, {'USA':1, ... }
     idx2phrase = {phrase2idx[k]:k for k in phrase2idx}
@@ -112,17 +152,19 @@ def contrastive_analysis(document_phrase_cnt, background_phrases, twin, target):
     # Currently use freq diff.
     twin_cnt = defaultdict(int)
     target_cnt = defaultdict(int)
+    n = defaultdict(int)
     for doc_id in twin:
         for phrase in document_phrase_cnt[doc_id]:
             twin_cnt[phrase] += document_phrase_cnt[doc_id][phrase]
     for doc_id in target:
         for phrase in document_phrase_cnt[doc_id]:
+            n[phrase] += 1
             target_cnt[phrase] += document_phrase_cnt[doc_id][phrase]
     phrase_rescore = {}
     for phrase in background_phrases:
         if phrase not in target_cnt:
             continue
-        phrase_rescore[phrase] = 1.0 * target_cnt[phrase] / twin_cnt[phrase]
+        phrase_rescore[phrase] = 1.0 * target_cnt[phrase] / twin_cnt[phrase] * n[phrase] / len(target)
     ranked_list = [(phrase, phrase_rescore[phrase]) for phrase in phrase_rescore]
     ranked_list = sorted(ranked_list, key=lambda t: -t[1])
     return ranked_list, phrase_rescore
