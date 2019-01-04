@@ -20,5 +20,8 @@ If we want to assign documents to one dimension, for example, sports "baseball, 
 By diversified ranking between twin documents and sibling documents, we obtain vocabulary for target documents. Usage(TODO:@Jingjing)
 
 ## Comparative and Contrastive Analysis
-We conduct summarization based on twin and target documents. Usage(TODO:@Jingjing)
->>>>>>> 4679252881ec187ec6a5f7883d3305be24d4eddf
+## We conduct summarization based on twin and target documents.
+## Currently the output is just ranked list based on w_i(freq difference) and n_i(coverage in target), and haven't implemented redundancy part.
+```
+python summarizer.py
+```
