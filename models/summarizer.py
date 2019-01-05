@@ -13,6 +13,8 @@ from numpy.linalg import matrix_power
 from phraseExtractor import phraseExtractor
 
 def manifold_ranking(twin_phrases, target_phrases, topic_scores, phrase2idx, similarity_scores):
+    # Manifold ranking with sink points.
+    # The phrases in twin sets are regarded as sink points, and ranked simultaneously.
     threshold = 0.01
     alpha = 0.5
 
@@ -31,7 +33,6 @@ def manifold_ranking(twin_phrases, target_phrases, topic_scores, phrase2idx, sim
     current_scores = scores.copy()
 
     while True:
-        print('Updating..')
         dist = np.sum(current_scores - scores)
         scores = alpha * np.dot(similarity_scores * I_f, scores) + (1 - alpha) * topic_scores
         if dist < threshold:
