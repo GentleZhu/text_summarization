@@ -36,6 +36,7 @@ class WikidataLinker:
 				pass
 		return title   
 
+	# bug need to be fixed
 	def title2wid(self,title):
 		wid=''
 		page = self.db.enwiki_pages.find_one({'sitelinks.enwiki.title': title})
@@ -85,7 +86,7 @@ class WikidataLinker:
 
 		facts = []
 		t2wid = {}
-		for i,k in tqdm(enumerate(list(kws.keys()))):
+		for i,k in enumerate(list(kws.keys())):
 			for j,l in enumerate(list(kws.keys())):
 				if k == l:
 					continue
@@ -106,14 +107,14 @@ class WikidataLinker:
 		phrases=self.load_kws(doc_list)
 		kws={}
 		#print(phrases)
-		wid2surface = defaultdict(list)
+		wid2original = defaultdict(list)
 		for phrase in phrases:
 			wid=self.title2wid(phrase)
 			if  wid !='':
 				kws[wid]=1
-				wid2surface[wid].append(phrase)
+				wid2original[wid].append(phrase)
 		facts, t2wid = self.retrieve_facts(kws,num_hop)
-		return facts, t2wid, wid2surface
+		return facts, t2wid, wid2original
 		
 		#for p,count in self.property.items():
 		#	self.p_list.append((p,count))
