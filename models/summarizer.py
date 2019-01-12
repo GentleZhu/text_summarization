@@ -123,7 +123,7 @@ def generate_caseOLAP_scores(sibling_groups, target_set, document_phrase_cnt, in
             target_phrase_freq[phrase] += document_phrase_cnt[idx][phrase]
 
     phrase_extractor = phraseExtractor(phrase_candidates, phrase2idx, target_set, sibling_groups, target_phrase_freq)
-    ranked_list = phrase_extractor.compute_scores(document_phrase_cnt, inverted_index, 'D')
+    ranked_list = phrase_extractor.compute_scores(document_phrase_cnt, inverted_index, 'B')
     scores = np.array([0.0 for _ in range(len(ranked_list))])
 
     for t in ranked_list:
@@ -234,16 +234,18 @@ def main():
     target_docs = [846, 845, 2394, 2904, 2633, 2565, 2956, 2728, 2491]
     document_phrase_cnt, inverted_index = collect_statistics()
     siblings, twin_docs = load_doc_sets()
-    phrase2idx = generate_candidate_phrases(document_phrase_cnt, twin_docs)
+    phrase2idx = generate_candidate_phrases(document_phrase_cnt, target_docs)
 
     #similarity_scores = pickle.load(open('similarity_score.p', 'rb'))
     #idx2phrase = pickle.load(open('idx2phrase.p', 'rb'))
 
     #siblings = random_sample_sibling(siblings, 10)
 
-    scores, ranked_list = generate_caseOLAP_scores(siblings, twin_docs, document_phrase_cnt, inverted_index, phrase2idx)
+    scores, ranked_list = generate_caseOLAP_scores(siblings, target_docs, document_phrase_cnt, inverted_index, phrase2idx)
+    pickle.dump(ranked_list, open('data/ranked_list.p', 'wb'))
 
     embed()
+    exit()
 
     phrase_selected = 1000
     all_phrases = [t[0] for t in ranked_list[:phrase_selected]]
