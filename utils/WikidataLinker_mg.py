@@ -39,7 +39,7 @@ class WikidataLinker:
 	# bug need to be fixed
 	def title2wid(self,title):
 		wid=''
-		page = self.db.enwiki_pages.find_one({'sitelinks.enwiki.title': title})
+		page = self.db.pages.find_one({'sitelinks.enwiki.title': title})
 		if page is not None:
 			wid=page['id']
 		return wid

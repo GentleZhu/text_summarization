@@ -70,10 +70,19 @@ class textGraph(object):
         
         #return(texts)
 
-    def build_dictionary(self, vocabulary_size = 1000000):
+    #add mapping here
+    def build_dictionary(self, vocabulary_size = 13000, freq = 10):
+        syn_set = {
+        'american_football': 'football',
+        'association_football': 'soccer',
+        'ice_hockey': 'hockey'
+        }
         # Turn sentences (list of strings) into lists of words
         split_sentences = [s.split() for s in self.texts]
         split_tuples = [s[:2] for s in self.tuples]
+
+        labels = set(map(lambda x:x[1], self.tuples))
+        #print(labels)
         #print(split_sentences, split_tuples)
         split_sentences += split_tuples
         words = [x for sublist in split_sentences for x in sublist]
@@ -88,7 +97,13 @@ class textGraph(object):
         # For each word, that we want in the dictionary, add it, then make it
         # the value of the prior dictionary length
         for word, word_count in count:
-            self.name2id[word] = len(self.name2id)
+            #if word_count < freq and word not in labels:
+            #    continue
+            if word in syn_set:
+                #print(word, word_count)
+                self.name2id[word] = self.name2id[syn_set[word]]
+            else:
+                self.name2id[word] = len(self.name2id)
         self.id2name = dict(zip(self.name2id.values(), self.name2id.keys()))
         self.num_words = len(self.name2id)
         #return(self.name2id)
@@ -104,9 +119,10 @@ class textGraph(object):
             for word in sentence.split():
                 if word in self.name2id:
                     word_ix = self.name2id[word]
+                    sentence_data.append(word_ix)
                 else:
                     word_ix = 0
-                sentence_data.append(word_ix)
+                
             self.data.append(sentence_data)
         for tup in self.tuples:
             tup_data = []
@@ -114,6 +130,8 @@ class textGraph(object):
                 if word in self.name2id:
                     word_ix = self.name2id[word]
                 else:
+                    print(word)
+                    assert True == False
                     word_ix = 0
                 tup_data.append(word_ix)
             tup_data.append(tup[-1])
@@ -137,7 +155,7 @@ class textGraph(object):
                 #    self.tuples += d
                 self.texts.append(cline)
         if attn:
-            filtered = [(k, ner_set[k]) for k in ner_set if ner_set[k] > 30]
+            filtered = [(k, ner_set[k]) for k in ner_set if ner_set[k] > 10]
 
             d, t2wid, wid2surface = self.Linker.expand([t[0] for t in filtered], 2)
 
@@ -152,9 +170,16 @@ class textGraph(object):
         if attn:
             return hierarchy, t2wid, wid2surface
 
-    def load_concepts(self, concepts):
-        for concept in concepts:
-            self.tuples.extend(concept.output_concepts())
+    def load_concepts(self, corpusIn, concepts):
+        with open(corpusIn) as IN:
+            for line in tqdm(list(IN.readlines())):
+                tokens = line.strip().split(' ')
+                for concept in concepts:
+                    self.tuples.extend(concept.link_corpus(tokens))
+
+        #for concept in concepts:
+        #    print(concept.output_concepts())
+        #print(self.tuples)
 
     # backup functions
     def _load_corpus(self, corpusIn, jsonIn, attn = False):
@@ -194,24 +219,51 @@ class textGraph(object):
         return hierarchy
 
             
-    def buildTrain(self, window_size = 5, attn = False):
+    def buildTrain(self, window_size = 1, method='doc2vec'):
         #assert len(self.data) == len(self.kws)
         inputs, outputs = [], []
         for idx, sent in enumerate(self.data):
-            batch_and_labels = [(sent[i:i+window_size], sent[i+window_size]) for i in range(0, len(sent)-window_size)]
-            #print(batch_and_labels)
-            try:
-                batch, labels = [list(x) for x in zip(*batch_and_labels)]
-            except:
-                continue
-            batch = [x + [idx] for x in batch]
+            if method == 'doc2vec' or method == 'knowledge2vec':
+                batch_and_labels = [(sent[i:i+window_size], sent[i+window_size]) for i in range(0, len(sent)-window_size)]
+                #print(batch_and_labels)
+                try:
+                    batch, labels = [list(x) for x in zip(*batch_and_labels)]
+                except:
+                    continue
+                batch = [x + [idx] for x in batch]
+
+            elif 'skip_gram' in method:
+                tuple_data = [(y, idx) for y in sent]
+                if len(tuple_data) == 0:
+                    continue
+                batch, labels = zip(*tuple_data)
+                batch = [[x] + [idx] for x in batch]
+            else:
+                window_sequences = [sent[max((ix-window_size),0):(ix+window_size+1)] for ix, x in enumerate(sent)]
+                # Denote which element of each window is the center word of interest
+                label_indices = [ix if ix<window_size else window_size for ix,x in enumerate(window_sequences)]
+                batch_and_labels = [(x[y], x[:y] + x[(y+1):]) for x,y in zip(window_sequences, label_indices)]
+                # Make it in to a big list of tuples (target word, surrounding word)
+                
+                tuple_data = [(x, y_) for x,y in batch_and_labels for y_ in y]
+                if len(tuple_data) == 0:
+                    continue
+                batch, labels = zip(*tuple_data)
+
+            #add doc index
+                batch = [[x] + [idx] for x in batch]
             inputs += batch
             outputs += labels
         #print(outputs[-1])
         print("Training data stats: records {}, kb pairs {}".format(len(inputs), len(self.tuple_data)))
-        for tup in self.tuple_data:
-            inputs.append([tup[0]]*window_size + [tup[2] + len(self.data)])
-            outputs.append(tup[1])
+        if method == 'knowledge2vec':
+            for tup in self.tuple_data:
+                inputs.append([tup[0]]*window_size + [tup[2] + len(self.data)])
+                outputs.append(tup[1])
+        elif method == 'knowledge2skip_gram':
+            for tup in self.tuple_data:
+                inputs.append([tup[0], tup[2] + len(self.data)])
+                outputs.append(tup[1])
 
         batch_data = np.array(inputs)
         label_data = np.transpose(np.array([outputs]))
@@ -368,6 +420,7 @@ class Concept(object):
         super(Concept, self).__init__()
         self.hierarchy = hierarchy
         self.links = defaultdict(list)
+        #print(self.hierarchy.p2c['type of sport'])
         
     def dfs(self, node, relations, depth):
         for v in self.hierarchy.p2c[node][relations[depth]]:
@@ -376,7 +429,8 @@ class Concept(object):
 
             if v[1] > 0:
                 self.dfs(v, relations, depth+1)
-            self.links[v[0]].append([node[0], relations[depth]])
+                #self.links[v[0]].append([node[0], relations[depth]])
+                self.links[v[0]].append([node[0], relations[depth]])
 
     def construct_concepts(self, _concept):
         self.height = len(_concept[1])
@@ -385,19 +439,41 @@ class Concept(object):
         relations = _concept[1]
         self.dfs(self.root, relations, 0)
 
-    def output_concepts(self):
+    def output_concepts(self, path):
         output_tuple = []
-        for k,vl in self.links.items():
-            for v in vl:
-                output_tuple.append([k.lower().replace(' ', '_'), v[0].lower().replace(' ', '_'), v[1]])
+        with open(path, 'w') as OUTPUT:
+            for k,vl in self.links.items():
+                for v in vl:
+                    if v[0] == self.root[0]:
+                        v[0] = k
+                    OUTPUT.write("{}|{}\n".format(v[0], k))
+                    output_tuple.append([k.lower().replace(' ', '_'), v[0].lower().replace(' ', '_'), v[1]])
         return output_tuple
-
 
     def concept_link(self, phrases):
         linked_nodes = set()
         for p in phrases:
             if p in self.links:
                 linked_nodes = linked_nodes.union(map(lambda x:x[0], self.links[p]))
+        return linked_nodes
+
+    def normalize(self, phrase):
+        return phrase.lower().replace(' ', '_')
+
+    def link_corpus(self, phrases):
+        syn_set = {
+        'football': 'American football',
+        'soccer': 'association football',
+        'hockey': 'ice hockey'
+        }
+        linked_nodes = []
+        #print(self.links)
+        for p in phrases:
+            p = p.replace('_', ' ')
+            if p in self.links:
+                #print(self.links[p])
+                #print(list(map(lambda x:[self.normalize(p), self.normalize(x[0]), x[1]], self.links[p])))
+                linked_nodes.extend(map(lambda x:[self.normalize(p), self.normalize(p) if x[0] == self.root[0] else self.normalize(x[0]), x[1]], self.links[p]))
         return linked_nodes
 
 def rank_hierarchies(hierarchy, option='A'):
@@ -473,26 +549,23 @@ def background_assign(concept, t2wid, wid2surface, target_docs = None, json_path
 
     return assignment, target_assigment
 
-def doc_assign(concept, wid2t, surface2wid, ner_cnt):
-    tmp_cnt = {}
-    for k in ner_cnt:
-        if k in surface2wid and surface2wid[k] in wid2t:
-            tmp_cnt[wid2t[surface2wid[k]]] = ner_cnt[k]
-    ner_cnt = tmp_cnt
+def doc_assign(concepts, docs, label_embeddings):
+    top_labels = map(lambda x:x.root[0], concepts)
+    candidate_labels = defaultdict(int)
+    for doc in docs:
+        local_list = []
+        for label in top_labels:
+            label_vec = label_embeddings[label]
+            local_list.append((label, np.dot(vec, label_vec)))
+            #local_list.append((label, scipy.spatial.distance.cosine(vec, label_vec)))
+        m = max(local_list, key=lambda t:t[1])
+        candidate_labels[m] += 1
 
-    linked_nodes = concept.concept_link(ner_cnt.keys())
-    aggre_cnt = defaultdict(int)
-    for x in ner_cnt:
-        if x in concept.links:
-            for node in concept.links[x]:
-                #if node == 'basketball':
-                #    aggre_cnt[x] += 1
-                aggre_cnt[node] += 1
+    main_label = sorted(candidate_labels.items(), key=lambda x:x[1], reverse=True)
+    print("Fall into Concept:{}\n".format())
 
-    aggre_cnt = dict(aggre_cnt)
-    if len(aggre_cnt) == 0:
-        return None
-    assigned_node = max(aggre_cnt.items(), key=operator.itemgetter(1))[0]
+    sub_labels = concepts[top_labels.index()]
+    #
     return assigned_node
 
 # Generate data randomly (N words behind, target, N words ahead)
