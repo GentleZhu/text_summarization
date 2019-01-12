@@ -89,7 +89,7 @@ def cos_assign_docs(doc_embeddings, label_embeddings, gt_labels=None):
         per_doc_assignment[idx] = m[0]
     return doc_assignment, per_doc_assignment
 
-def evaluate_assignment(doc_assignment, gt_labels, k=10):
+def evaluate_assignment(doc_assignment, gt_labels, k=100):
     # Evaluate top-k precision
     # doc_assignment: dict, {'football':[0,1,3...], ...}
     # gt_labels: dict, {0: 'football', ...}

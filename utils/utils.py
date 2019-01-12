@@ -420,6 +420,7 @@ class Concept(object):
         super(Concept, self).__init__()
         self.hierarchy = hierarchy
         self.links = defaultdict(list)
+        self.layers = [[]]
         #print(self.hierarchy.p2c['type of sport'])
         
     def dfs(self, node, relations, depth):
@@ -549,24 +550,90 @@ def background_assign(concept, t2wid, wid2surface, target_docs = None, json_path
 
     return assignment, target_assigment
 
-def doc_assign(concepts, docs, label_embeddings):
-    top_labels = map(lambda x:x.root[0], concepts)
-    candidate_labels = defaultdict(int)
-    for doc in docs:
+def load_doc_emb(emb_path):
+    with open(emb_path) as EMB:
+        headline = EMB.readline().strip().split(' ')
+        num_nodes, num_dim = map(int, headline)
+        output = np.zeros((num_nodes, num_dim))
+        for line in EMB:
+            tmp = line.strip().split(' ')
+            output[int(tmp[0]), :] = np.asarray(list(map(float, tmp[1:])))
+        return output
+
+def load_label_emb(emb_path):
+    with open(emb_path) as EMB:
+        headline = EMB.readline().strip().split(' ')
+        num_nodes, num_dim = headline
+        output = dict()
+        for line in EMB:
+            tmp = line.strip().split(' ')
+            output[tmp[0]] = np.asarray(list(map(float, tmp[1:])))
+        return output
+
+def background_doc_assign(doc_embeddings, label_embeddings, labels):
+    doc_assignment = defaultdict(list)
+    for idx in range(doc_embeddings.shape[0]):
+        vec = doc_embeddings[idx]
         local_list = []
-        for label in top_labels:
+        for label in labels:
             label_vec = label_embeddings[label]
             local_list.append((label, np.dot(vec, label_vec)))
             #local_list.append((label, scipy.spatial.distance.cosine(vec, label_vec)))
         m = max(local_list, key=lambda t:t[1])
+        #if idx > 10:
+        #    break
+        #print(local_list)
+        doc_assignment[m[0]].append((idx, m[1]))
+    return doc_assignment
+
+def retrieve_siblings(main_doc_assignment, doc_assignment, labels, topk = 10):
+    return_docs = {}
+    for label in doc_assignment:
+        ranked_list = []
+        for t in sorted(doc_assignment[label], key=lambda t:-t[1]):
+            if len(ranked_list) >= topk:
+                break
+            if t[0] in main_doc_assignment:
+                ranked_list.append(t[0])
+        return_docs[label] = ranked_list
+    return return_docs
+
+def target_doc_assign(concepts, docs, label_embeddings, doc_embeddings):
+    top_labels = list(map(lambda x:x.root[0], concepts))
+    candidate_labels = defaultdict(int)
+    target_label = None
+    top_labels += ['science', 'business', 'arts', 'politics']
+    for doc in docs:
+        local_list = []
+        vec = doc_embeddings[doc]
+        for label in top_labels:
+            label_vec = label_embeddings[label]
+            local_list.append((label, np.dot(vec, label_vec)))
+            #local_list.append((label, scipy.spatial.distance.cosine(vec, label_vec)))
+        m = max(local_list, key=lambda t:t[1])[0]
         candidate_labels[m] += 1
+    main_label = sorted(candidate_labels.items(), key=lambda x:x[1], reverse=True)[0][0]
+    print("Fall into Concept:{}".format(main_label))
 
-    main_label = sorted(candidate_labels.items(), key=lambda x:x[1], reverse=True)
-    print("Fall into Concept:{}\n".format())
-
-    sub_labels = concepts[top_labels.index()]
+    sub_labels = concepts[top_labels.index(main_label)].layers 
+    candidate_labels = defaultdict(int)
+    for depth in range(len(sub_labels)):
+        for doc in docs:
+            vec = doc_embeddings[doc]
+            local_list = map(lambda x:(x, np.dot(vec, label_embeddings[x])), sub_labels[depth])
+            m = max(local_list, key=lambda t:t[1])[0]
+            candidate_labels[m] += 1
+        entropy = 0
+        for m in candidate_labels:
+            entropy -= candidate_labels[m] / len(docs) * math.log(candidate_labels[m] / len(docs))
+        if entropy > -1:
+            print(candidate_labels)
+            target_label = max(candidate_labels.items(), key=operator.itemgetter(1))[0]
+            print('Entropy is {}, Category:{}'.format(entropy, target_label))
+        # now focus on depth-1 node
+        break
     #
-    return assigned_node
+    return main_label, target_label, sub_labels[depth]
 
 # Generate data randomly (N words behind, target, N words ahead)
 def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):
