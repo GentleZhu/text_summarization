@@ -131,7 +131,6 @@ if __name__ == '__main__':
 			twin_docs = siblings[target_label]
 			siblings_docs = [siblings[x] for x in siblings if x!=target_label]
 			print(twin_docs, siblings_docs)
-			
 
 			break
 

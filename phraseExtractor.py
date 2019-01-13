@@ -107,7 +107,7 @@ class phraseExtractor:
         elif score_option == 'C':
             score = popularity
         elif score_option == 'D':
-            int_score = self.int_score[entity] if entity in self.int_score else 0.
+            int_score = self.int_score[entity] if entity in self.int_score else 0.3
             score = popularity * distinctiveness * int_score
         elif score_option == 'E':
             int_score = self.int_score[entity] if entity in self.int_score else 0.3
@@ -139,8 +139,8 @@ class phraseExtractor:
         for entity in tqdm(self.entity_candidates):
             if score_option == 'G':
                 score = math.log(len(document_phrase_cnt)) / math.log(1 + len(inverted_index[entity])) * self.entity2freq[entity]
-                if '_' not in entity:
-                    score = 0.
+                #if '_' not in entity:
+                #    score = 0.
             else:
                 score = self._compute_entity_score(entity, score_option)
             self.ranked_list.append((entity, score))

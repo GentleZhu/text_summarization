@@ -11,7 +11,10 @@ from scipy import spatial
 from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.tokenize import word_tokenize
 from tqdm import tqdm
+import math
 import pickle
+
+from rouge import Rouge
 
 def load_json(json_path):
     records = []
@@ -54,14 +57,18 @@ def convert_line_number(old_ids):
     return new_ids
 
 def collect_extractive_fragments(abstract, content):
+    tagged = nltk.pos_tag(abstract)
     extractive_fragments = []
     i, j = (0, 0)
     while i < len(abstract):
+        if tagged[i][1] == 'IN':
+            i += 1
+            continue
         f = []
         while j < len(content):
-            if abstract[i] == content[j]:
+            if abstract[i] == content[j] and not abstract[i] in [',', '.', '?', '!', ':']:
                 i1, j1 = i, j
-                while i1 < len(abstract) and j1 < len(content) and abstract[i1] == content[j1]:
+                while i1 < len(abstract) and j1 < len(content) and abstract[i1] == content[j1] and not abstract[i1] in [',', '.', '?', '!', ':']:
                     i1 += 1
                     j1 += 1
                 if len(f) < i1 - i:
@@ -97,13 +104,15 @@ def collect_set_fragment(records, passage_ids):
 def calculate_phrase_level_precision(phrases, gt_fragments):
     total_n = len(phrases)
     correct = 0
-    correct_phrases = []
+    correct_phrases = defaultdict(int)
     for phrase in phrases:
         for fragment in gt_fragments:
             if phrase.lower() in '_'.join(fragment).lower():
-                correct += 1
-                correct_phrases.append(phrase)
-                break
+                if phrase not in correct_phrases:
+                    correct += 1
+                correct_phrases[phrase] += 1
+    #ranked_list = [(k, correct_phrases[k]) for k in correct_phrases]
+    #ranked_list = sorted(ranked_list, key=lambda t: -t[1])
     return 1.0 * correct / total_n, correct_phrases
 
 def calculate_AP(ranked_list, ground_truth):
@@ -120,15 +129,31 @@ def calculate_AP(ranked_list, ground_truth):
     y_scores = np.array(predict)
     return average_precision_score(y_true, y_scores)
 
+def calculate_DCG(ranked_list, ground_truth, normalized=False):
+    score = 0.
+    for idx, (phrase, _) in enumerate(ranked_list):
+        if normalized and idx > len(ground_truth):
+            break
+        if not phrase in ground_truth:
+            continue
+        score += ground_truth[phrase] * 1.0 / math.log(2 + idx)
+    return score
+
+def evaluate_rouge(reference, hypothesis):
+    rouge = Rouge()
+    return rouge.get_scores(hypothesis, reference)
+
 if __name__ == '__main__':
     json_path = '/shared/data/qiz3/text_summ/NYT_sports.json'
     records, abstracts, contents = load_json(json_path)
     phrases = pickle.load(open('../models/data/target_phrases.p', 'rb'))
-    gt = collect_set_fragment(records, [846, 845, 2394, 2904, 2633, 2565, 2956, 2728, 2491])
-    _, gt = calculate_phrase_level_precision(phrases, gt)
+    gt_fragments = collect_set_fragment(records, [846, 845, 2394, 2904, 2633, 2565, 2956, 2728, 2491])
+    _, gt = calculate_phrase_level_precision(phrases, gt_fragments)
 
     ranked_list = pickle.load(open('../models/data/ranked_list.p', 'rb'))
-    ap = calculate_AP(ranked_list, gt)
+    #ap = calculate_AP(ranked_list, gt.keys())
+
+    dcg = calculate_DCG(ranked_list, gt)
 
     embed()
     exit()
