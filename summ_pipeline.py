@@ -12,7 +12,7 @@ from summarizer import textrank
 relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
 #relation_list=['P31', 'P641']
 config = {'batch_size': 128, 'epoch_number': 101, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':0,
-		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_sports', 'method':'knowledge2skip_gram', 'id':3,
+		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'knowledge2skip_gram', 'id':3,
 		'preprocess': True, 'relation_list':[], 'doc_emb_path': 'intermediate_data/pretrain_doc.emb',
 		'label_emb_path': 'intermediate_data/pretrain_label.emb', 'stage': 'test'}
 
@@ -48,9 +48,10 @@ if __name__ == '__main__':
 			#graph_builder._load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.txt')
 			print("Extracting Hierarchies")
 			if len(config['relation_list']) > 0:
-				#h, t2wid, wid2surface = graph_builder.load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.token', '/shared/data/qiz3/text_summ/data/NYT_sports.json', attn=True)
-				#h.save_hierarchy("{}_{}_hierarchies.p".format(config['method'], config['dataset']))
-				h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
+				h, t2wid, wid2surface = graph_builder.load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.token', '/shared/data/qiz3/text_summ/data/NYT_sports.json', attn=True)
+				h.save_hierarchy("{}_{}_hierarchies.p".format(config['method'], config['dataset']))
+				#h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
+				sys.exit(-1)
 				concepts = []
 				concept_configs = [[(u'type of sport', 2), [2, 4]]]
 				for con_config in concept_configs:
@@ -140,20 +141,58 @@ if __name__ == '__main__':
 			##################
 			# caseOLAP block #
 			##################
-			phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
-			scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
-														   phrase2idx)
+			'''
+            phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
+            scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
+                                                           phrase2idx)
+            '''
 
 			###################
 			# Textrank block ##
 			###################
 			'''
-			phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
-			similarity_scores = build_co_occurrence_matrix(docs, phrase2idx,
+            phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
+            similarity_scores = build_co_occurrence_matrix(docs, phrase2idx,
                     '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt')
-			scores = textrank(phrase2idx.keys(), similarity_scores)
-			ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
-			ranked_list = sorted(ranked_list, key=lambda t:-t[1])
+            scores = textrank(phrase2idx.keys(), similarity_scores)
+            ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
+            ranked_list = sorted(ranked_list, key=lambda t:-t[1])
+            '''
+
+			#############################
+			# Diversified ranking block #
+			#############################
+			'''
+            phrase2idx, idx2phrase = build_in_domain_dict(twin_docs, document_phrase_cnt)
+            scores, ranked_list = generate_caseOLAP_scores(siblings_docs, twin_docs, document_phrase_cnt, inverted_index,
+                                                           phrase2idx)
+            similarity_scores, _ = calculate_pairwise_similarity(phrase2idx)
+            selected_index = select_phrases(scores, similarity_scores, 2, 1000)
+            phrases = [idx2phrase[k] for k in selected_index]
+            '''
+
+			##########################
+			# Manifold ranking block #
+			##########################
+			'''
+			phrase2idx, idx2phrase = build_in_domain_dict(twin_docs, document_phrase_cnt)
+			scores, ranked_list = generate_caseOLAP_scores(siblings_docs, twin_docs, document_phrase_cnt,
+														   inverted_index,
+														   phrase2idx)
+			phrase_selected = 1000
+			all_phrases = [t[0] for t in ranked_list[:phrase_selected]]
+			phrase2idx = {phrase: i for (i, phrase) in enumerate(all_phrases)}
+			idx2phrase = {phrase2idx[k]: k for k in phrase2idx}
+			similarity_scores, _ = calculate_pairwise_similarity(phrase2idx)
+			topic_scores = np.zeros([len(phrase2idx)])
+			for i in range(phrase_selected):
+				topic_scores[phrase2idx[ranked_list[i][0]]] = ranked_list[i][1]
+			target_phrase2idx = generate_candidate_phrases(document_phrase_cnt, docs)
+			target_phrases = [phrase for phrase in phrase2idx if phrase in target_phrase2idx]
+			twin_phrases = [phrase for phrase in phrase2idx if phrase not in target_phrase2idx]
+			A = manifold_ranking(twin_phrases, target_phrases, topic_scores, phrase2idx, similarity_scores)
+			ranked_list = [(phrase, A[phrase2idx[phrase]]) for phrase in target_phrases]
+			ranked_list = sorted(ranked_list, key=lambda t: -t[1])
 			'''
 
 			embed()

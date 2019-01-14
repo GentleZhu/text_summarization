@@ -206,7 +206,7 @@ def calculate_pairwise_similarity(phrase2idx):
     # phrase2idx: dict, {'USA':1, ... }
     idx2phrase = {phrase2idx[k]:k for k in phrase2idx}
     similarity_scores = np.zeros([len(phrase2idx), len(phrase2idx)])
-    emb = load_emb('/shared/data/qiz3/text_summ/src/jt_code/sports.emb')
+    emb = load_emb('/shared/data/qiz3/text_summ/src/jt_code/full.emb')
     print('Calculate pairwise similarity...')
     for i in tqdm(range(len(phrase2idx))):
         for j in range(len(phrase2idx)):
