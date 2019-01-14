@@ -170,7 +170,7 @@ if __name__ == '__main__':
     if 'knowledge' not in config['method']:
         config['relation_list'] = []
     
-    gt_labels, labels, gt_counts = load_labels('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json')
+    gt_labels, labels, gt_counts = load_labels('/shared/data/qiz3/text_summ/NYT_sports.json')
     print(labels, gt_counts)
     if config['method'] != 'doc2cube':
         graph_builder = textGraph()

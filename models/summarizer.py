@@ -81,8 +81,8 @@ def textrank(target_phrases, similarity_scores):
 
     return scores
 
-def build_co_occurrence_matrix(target, phrase2idx):
-    segIn = open('/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/sports/intermediate/segmentation.txt')
+def build_co_occurrence_matrix(target, phrase2idx, seg_file):
+    segIn = open(seg_file)
     similarity_scores = np.zeros([len(phrase2idx), len(phrase2idx)])
     doc_id = -1
     passage = []
@@ -157,7 +157,7 @@ def select_phrases(relevance_score, similarity_score, weight, k):
         score = score - 2 * relevance_score[ret] * (similarity_score[:, ret] * relevance_score)
     return selected_indices
 
-def collect_statistics(in_file='/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/sports.txt'):
+def collect_statistics(in_file):
     document_phrases = defaultdict(lambda: defaultdict(int))
     inverted_index = defaultdict(lambda: defaultdict(int))
     with open(in_file) as IN:
@@ -195,7 +195,7 @@ def generate_caseOLAP_scores(sibling_groups, target_set, document_phrase_cnt, in
             target_phrase_freq[phrase] += document_phrase_cnt[idx][phrase]
 
     phrase_extractor = phraseExtractor(phrase_candidates, phrase2idx, target_set, sibling_groups, target_phrase_freq)
-    ranked_list = phrase_extractor.compute_scores(document_phrase_cnt, inverted_index, 'G')
+    ranked_list = phrase_extractor.compute_scores(document_phrase_cnt, inverted_index, 'A')
     scores = np.array([0.0 for _ in range(len(ranked_list))])
 
     for t in ranked_list:
@@ -347,16 +347,17 @@ def main():
     #target_docs = [846]
     #segIn = open('/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/sports/intermediate/segmentation.txt')
     #passage = segIn.readlines()
-    document_phrase_cnt, inverted_index = collect_statistics()
+    document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/sports.txt')
     siblings, twin_docs = load_doc_sets()
 
-    phrase2idx, idx2phrase = build_in_domain_dict(twin_docs, document_phrase_cnt)
+    phrase2idx, idx2phrase = build_in_domain_dict(target_docs, document_phrase_cnt)
 
     ###################
     # Textrank block ##
     ###################
     '''
-    similarity_scores = build_co_occurrence_matrix(target_docs, phrase2idx)
+    similarity_scores = build_co_occurrence_matrix(target_docs, phrase2idx, 
+            '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/sports/intermediate/segmentation.txt')
     scores = textrank(phrase2idx.keys(), similarity_scores)
     ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
     ranked_list = sorted(ranked_list, key=lambda t:-t[1])

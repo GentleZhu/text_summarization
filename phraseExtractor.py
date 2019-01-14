@@ -134,7 +134,7 @@ class phraseExtractor:
         self.load_freq_data(document_phrase_cnt, inverted_index)
         self._calculate_sibling_max_df()
         if score_option in ['D', 'E', 'F', 'H']:
-            self.read_int('/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/sports/intermediate/AutoPhrase.txt')
+            self.read_int('/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/AutoPhrase.txt')
         print('Start calculating scores...')
         for entity in tqdm(self.entity_candidates):
             if score_option == 'G':

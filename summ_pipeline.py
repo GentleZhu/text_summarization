@@ -6,6 +6,8 @@ import pickle
 from phraseExtractor import phraseExtractor
 sys.path.append('./models/')
 import embedder
+from summarizer import collect_statistics, build_in_domain_dict, generate_caseOLAP_scores, build_co_occurrence_matrix
+from summarizer import textrank
 
 relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
 #relation_list=['P31', 'P641']
@@ -96,7 +98,7 @@ if __name__ == '__main__':
 		
 		print("Training Embedding")
 		embedder.Train(config, X, y, num_words, num_docs)
-	else:
+	elif config['stage'] == 'test':
 	# Find concentrated concepts and specific common sense node
 		print("Loading Embedding")
 		#Sports Test Documents
@@ -132,7 +134,31 @@ if __name__ == '__main__':
 			siblings_docs = [siblings[x] for x in siblings if x!=target_label]
 			print(twin_docs, siblings_docs)
 
-			break
+			document_phrase_cnt, inverted_index = collect_statistics(
+				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
 
-	#assignments = background_assign(concept, t2wid, wid2surface)
-	#embed()
+			##################
+			# caseOLAP block #
+			##################
+			phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
+			scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
+														   phrase2idx)
+
+			###################
+			# Textrank block ##
+			###################
+			'''
+			phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
+			similarity_scores = build_co_occurrence_matrix(docs, phrase2idx,
+                    '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt')
+			scores = textrank(phrase2idx.keys(), similarity_scores)
+			ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
+			ranked_list = sorted(ranked_list, key=lambda t:-t[1])
+			'''
+
+			embed()
+			exit()
+
+			break
+	elif config['stage'] == 'finetune':
+		pass
