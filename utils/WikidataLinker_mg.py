@@ -64,7 +64,7 @@ class WikidataLinker:
 								if not self.relation_list:
 									self.kb[(wid, obj_wid)] = (0, hop)
 								else:
-									self.kb[(wid,obj_wid)] = (self.relation_list.index(p) + 1, hop)
+									self.kb[(wid,obj_wid)] = (self.relation_list.index(p), hop)
 						if (wid, obj_wid) in self.kb:
 							adj_nodes.add(obj_wid)
 		return adj_nodes

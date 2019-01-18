@@ -54,7 +54,7 @@ class phraseExtractor:
         print('Collecting group entities...')
         entities = set()
         for doc_id in tqdm(sibling_group):
-            entities |= self.document_phrase_cnt[doc_id].keys()
+            entities |= set(self.document_phrase_cnt[doc_id].keys())
         max_df = -1
         print('Done. Calculating max df...')
         for entity in tqdm(entities):

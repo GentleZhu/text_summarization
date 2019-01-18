@@ -16,6 +16,49 @@ from numpy.linalg import matrix_power
 
 from phraseExtractor import phraseExtractor
 
+def seedRanker(target_phrases, similarity_scores, phrase2idx, reweight=None, sink=[]):
+    # Textrank.
+    threshold = 0.0001
+    alpha = 0.5
+
+    normalized_sim = np.zeros(similarity_scores.shape)
+    for i in range(similarity_scores.shape[0]):
+        similarity_scores[i, i] = 0.0
+        sum_ = np.sum(similarity_scores[:, i])
+        if sum_ == 0:
+            continue
+        for j in range(similarity_scores.shape[0]):
+            normalized_sim[j, i] = similarity_scores[j, i] / sum_
+
+    num_target = len(target_phrases)
+    # together with embedding learning
+    assert num_target == similarity_scores.shape[0]
+    I = np.eye(num_target)
+    for t in enumerate(target_phrases):
+            if t in sink:
+                I[phrase2idx[t],phrase2idx[t]] = 0
+
+    weight = np.ones([num_target])
+    if reweight:
+        for t in target_phrases:
+            if t in reweight:
+                weight[phrase2idx[t]] = reweight[t] 
+    
+    scores = 1.0 / num_target * np.ones([num_target])
+    #topic_scores = scores.copy()
+    current_scores = scores.copy()
+    #if len(sink) > 0:
+    #    print(sum(sum(I)), num_target)
+    while True:
+        #print('Update...')
+        scores = alpha * np.dot(np.matmul(normalized_sim, I), scores) + (1 - alpha) * weight
+        dist = np.linalg.norm(current_scores - scores)
+        if dist < threshold:
+            break
+        current_scores = scores
+
+    return scores
+
 def manifold_ranking(twin_phrases, target_phrases, topic_scores, phrase2idx, similarity_scores):
     # Manifold ranking with sink points.
     # The phrases in twin sets are regarded as sink points, and ranked simultaneously.
@@ -52,7 +95,19 @@ def manifold_ranking(twin_phrases, target_phrases, topic_scores, phrase2idx, sim
 
     return scores
 
-def textrank(target_phrases, similarity_scores):
+def ensembleSumm(ranklist, k, opt=0):
+    final_ranking = defaultdict(float)
+    if opt == 0:
+        for r in ranklist:
+            for i in range(k):
+                final_ranking[r[i][0]] += 1.0 / (i+1)
+    return sorted(final_ranking.items(), key=lambda x:x[1], reverse=True)[:k]
+
+def distinctScore():
+    pass
+
+
+def textrank(target_phrases, similarity_scores, reweight=None, sink=[]):
     # Textrank.
     threshold = 0.0001
     alpha = 0.85
@@ -67,13 +122,27 @@ def textrank(target_phrases, similarity_scores):
             normalized_sim[j, i] = similarity_scores[j, i] / sum_
 
     num_target = len(target_phrases)
+    # together with embedding learning
+    assert num_target == similarity_scores.shape[0]
+    I = np.eye(num_target)
+    for idx,t in enumerate(target_phrases):
+            if idx in sink:
+                I[idx,idx] = 0
+
+    weight = np.ones([num_target])
+    if reweight:
+        for idx,t in enumerate(target_phrases):
+            if t in reweight:
+                weight[idx] = reweight[t] 
+    
     scores = 1.0 / num_target * np.ones([num_target])
     #topic_scores = scores.copy()
     current_scores = scores.copy()
-
+    #if len(sink) > 0:
+    #    print(sum(sum(I)), num_target)
     while True:
-        print('Update...')
-        scores = alpha * np.dot(normalized_sim, scores) + (1 - alpha)
+        #print('Update...')
+        scores = alpha * np.dot(np.matmul(normalized_sim, I), scores) + (1 - alpha) * weight
         dist = np.linalg.norm(current_scores - scores)
         if dist < threshold:
             break
@@ -187,7 +256,7 @@ def generate_candidate_phrases(document_phrase_cnt, docs):
                 phrase2idx[phrase] = len(phrase2idx)
     return phrase2idx
 
-def generate_caseOLAP_scores(sibling_groups, target_set, document_phrase_cnt, inverted_index, phrase2idx):
+def generate_caseOLAP_scores(sibling_groups, target_set, document_phrase_cnt, inverted_index, phrase2idx, option = 'A'):
     phrase_candidates = list(phrase2idx.keys())
     target_phrase_freq = defaultdict(int)
     for idx in target_set:
@@ -195,7 +264,7 @@ def generate_caseOLAP_scores(sibling_groups, target_set, document_phrase_cnt, in
             target_phrase_freq[phrase] += document_phrase_cnt[idx][phrase]
 
     phrase_extractor = phraseExtractor(phrase_candidates, phrase2idx, target_set, sibling_groups, target_phrase_freq)
-    ranked_list = phrase_extractor.compute_scores(document_phrase_cnt, inverted_index, 'A')
+    ranked_list = phrase_extractor.compute_scores(document_phrase_cnt, inverted_index, option)
     scores = np.array([0.0 for _ in range(len(ranked_list))])
 
     for t in ranked_list:
@@ -236,7 +305,7 @@ def contrastive_analysis(document_phrase_cnt, background_phrases, twin, target):
     for phrase in background_phrases:
         if phrase not in target_cnt:
             continue
-        phrase_rescore[phrase] = 1.0 * target_cnt[phrase] / twin_cnt[phrase] * n[phrase] / len(target)
+        phrase_rescore[phrase] = 1.0 * target_cnt[phrase] / twin_cnt[phrase] * len(twin) / len(target)
     ranked_list = [(phrase, phrase_rescore[phrase]) for phrase in phrase_rescore]
     ranked_list = sorted(ranked_list, key=lambda t: -t[1])
     return ranked_list, phrase_rescore

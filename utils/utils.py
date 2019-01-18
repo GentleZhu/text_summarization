@@ -144,12 +144,12 @@ class textGraph(object):
         with open(corpusIn) as IN, open(jsonIn) as JSON:
             for cline, jline in tqdm(list(zip(IN.readlines(), JSON.readlines()))):
                 if attn:
-                    ner = json.loads(jline)['ner']
+                    ner = json.loads(jline)['phrases']
                     for n in ner:
-                        ner_types.add(n[-1])
-                        if n[-1] in ['ORDINAL', 'CARDINAL']:
-                            continue
-                        ner_set[n[0]] += 1
+                        #ner_types.add(n[-1])
+                        #if n[-1] in ['ORDINAL', 'CARDINAL']:
+                        #    continue
+                        ner_set[n] += 1
                 #else:
                 #    d = self.Linker.expand(ner, 1)
                 #    self.tuples += d
@@ -157,7 +157,7 @@ class textGraph(object):
         if attn:
             filtered = [(k, ner_set[k]) for k in ner_set if ner_set[k] > 10]
 
-            d, t2wid, wid2surface = self.Linker.expand([t[0] for t in filtered], 2)
+            d, t2wid, wid2surface = self.Linker.expand([t[0] for t in filtered], 1)
 
             stats = defaultdict(int)
             for dd in d:

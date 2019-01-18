@@ -7,14 +7,14 @@ from phraseExtractor import phraseExtractor
 sys.path.append('./models/')
 import embedder
 from summarizer import collect_statistics, build_in_domain_dict, generate_caseOLAP_scores, build_co_occurrence_matrix
-from summarizer import textrank
+from summarizer import textrank, ensembleSumm, seedRanker
 
-relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
-#relation_list=['P31', 'P641']
+#relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
+relation_list=['P31', 'P279', 'P361']
 config = {'batch_size': 128, 'epoch_number': 101, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':0,
 		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'knowledge2skip_gram', 'id':3,
-		'preprocess': True, 'relation_list':[], 'doc_emb_path': 'intermediate_data/pretrain_doc.emb',
-		'label_emb_path': 'intermediate_data/pretrain_label.emb', 'stage': 'test'}
+		'preprocess': True, 'relation_list':relation_list, 'doc_emb_path': 'intermediate_data/pretrain_doc.emb',
+		'label_emb_path': 'intermediate_data/pretrain_label.emb', 'stage': 'train', 'summ_method': 'textrank'}
 
 #P54 team P31 instance of P27 nationality P641 sports P413 position
 #P106 occupation P1344 participant P17 country P69 educate P279 subclass of P463 member of P641 sport
@@ -47,9 +47,12 @@ if __name__ == '__main__':
 			graph_builder.load_stopwords('/shared/data/qiz3/text_summ/data/stopwords.txt')
 			#graph_builder._load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.txt')
 			print("Extracting Hierarchies")
+			text_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.txt'.format(config['dataset'])
+			json_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.json'.format(config['dataset'])
 			if len(config['relation_list']) > 0:
-				h, t2wid, wid2surface = graph_builder.load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.token', '/shared/data/qiz3/text_summ/data/NYT_sports.json', attn=True)
-				h.save_hierarchy("{}_{}_hierarchies.p".format(config['method'], config['dataset']))
+				h, t2wid, wid2surface = graph_builder.load_corpus(text_path, json_path, attn=True)
+				embed()
+				h.save_hierarchy("intermediate_data/{}_{}_hierarchies.p".format(config['method'], config['dataset']))
 				#h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
 				sys.exit(-1)
 				concepts = []
@@ -59,8 +62,8 @@ if __name__ == '__main__':
 					concept.construct_concepts(con_config)
 					concepts.append(concept)
 					concept.output_concepts('concepts.txt')
-				graph_builder.load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.token', '/shared/data/qiz3/text_summ/data/NYT_sports.json', attn=False)
-				graph_builder.load_concepts('/shared/data/qiz3/text_summ/data/NYT_sports.token', concepts)
+				graph_builder.load_corpus(text_path, json_path, attn=False)
+				graph_builder.load_concepts(text_path, concepts)
 				#sys.exit(-1)
 			else:
 				h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
@@ -114,7 +117,7 @@ if __name__ == '__main__':
 		concepts = []
 		# TODO(QI): make it more distributional
 		concept_configs = [[(u'type_of_sport', 2), [2, 4]]]
-		h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
+		h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], 'NYT_sports'), 'rb'))
 		concept = Concept(h)
 		concept.root = (u'type_of_sport', 2)
 		concept.layers[0] = ['type_of_sport|soccer', 'type_of_sport|basketball', 'type_of_sport|baseball', 'type_of_sport|football','type_of_sport|tennis', 'type_of_sport|golf', 'type_of_sport|hockey']
@@ -129,7 +132,7 @@ if __name__ == '__main__':
 			# main_set = set(map(lambda x:x[0], main_doc_assignment[main_label]))
 			main_set = set(main_doc_assignment)
 			# print(len(main_set))
-			siblings = retrieve_siblings(main_set, doc_assignment, sibling_labels, topk=10)
+			siblings = retrieve_siblings(main_set, doc_assignment, sibling_labels, topk=1000)
 			
 			twin_docs = siblings[target_label]
 			siblings_docs = [siblings[x] for x in siblings if x!=target_label]
@@ -138,38 +141,64 @@ if __name__ == '__main__':
 			document_phrase_cnt, inverted_index = collect_statistics(
 				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
 
-			##################
-			# caseOLAP block #
-			##################
-			'''
-            phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
-            scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
-                                                           phrase2idx)
-            '''
+			if config['summ_method'] == 'caseOLAP':
+				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
+				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
+	                                                           phrase2idx)
 
-			###################
-			# Textrank block ##
-			###################
-			'''
-            phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
-            similarity_scores = build_co_occurrence_matrix(docs, phrase2idx,
-                    '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt')
-            scores = textrank(phrase2idx.keys(), similarity_scores)
-            ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
-            ranked_list = sorted(ranked_list, key=lambda t:-t[1])
-            '''
+			elif ['summ_method'] == 'caseOLAP-twin': 
 
-			#############################
-			# Diversified ranking block #
-			#############################
-			'''
-            phrase2idx, idx2phrase = build_in_domain_dict(twin_docs, document_phrase_cnt)
-            scores, ranked_list = generate_caseOLAP_scores(siblings_docs, twin_docs, document_phrase_cnt, inverted_index,
-                                                           phrase2idx)
-            similarity_scores, _ = calculate_pairwise_similarity(phrase2idx)
-            selected_index = select_phrases(scores, similarity_scores, 2, 1000)
-            phrases = [idx2phrase[k] for k in selected_index]
-            '''
+				#############################
+				# Diversified ranking block #
+				#############################
+				'''
+				phrase2idx, idx2phrase = build_in_domain_dict(twin_docs, document_phrase_cnt)
+				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, twin_docs, document_phrase_cnt, inverted_index, phrase2idx)
+				
+				twin_rank = list(map(lambda x:x[0], ranked_list))
+
+				similarity_scores, _ = calculate_pairwise_similarity(phrase2idx)
+				selected_index = select_phrases(scores, similarity_scores, 2, 1000)
+				phrases = [idx2phrase[k] for k in selected_index]
+				'''
+
+				##################
+				# caseOLAP block #
+				##################
+				docs = [5804]
+				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
+				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
+	                                                           phrase2idx)
+
+			elif ['summ_method'] == 'textrank':
+				###################
+	            # Textrank block ##
+	            ###################
+
+				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
+				similarity_scores = build_co_occurrence_matrix(docs, phrase2idx,
+				        '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt')
+				scores = textrank(phrase2idx.keys(), similarity_scores)
+				ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
+				ranked_list = sorted(ranked_list, key=lambda t:-t[1])
+			elif ['summ_method'] == 'our-ensemble': 
+            
+				ranked_lists = []
+				for doc in docs:
+					phrase2idx, idx2phrase = build_in_domain_dict([doc], document_phrase_cnt)
+					similarity_scores = build_co_occurrence_matrix([doc], phrase2idx,
+					        '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt')
+					scores = textrank(phrase2idx.keys(), similarity_scores)
+					ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
+					ranked_list = sorted(ranked_list, key=lambda t:-t[1])
+					ranked_lists.append(ranked_list)
+				
+				#print(doc, ranked_list[:20], rank_in_twins)
+				#print('**'.join(list(map(lambda x:x[0], ranked_list[:10]))))
+				#embed()
+
+				aggregated_rank = ensembleSumm(ranked_lists, k=20)
+
 
 			##########################
 			# Manifold ranking block #
