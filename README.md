@@ -25,3 +25,12 @@ Currently the output is just ranked list based on w_i(freq difference) and n_i(c
 ```
 python summarizer.py
 ```
+
+## Evaluation
+### Single document summarization
+Although not that neccesarry, we keep single document summarization as our side experiments.
+
+### Multiple document summarization
+```
+python evaluation/summ_eval.py eval-multi intermediate_data/textrank_NYT_full_set0.txt
+```

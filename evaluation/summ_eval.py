@@ -20,7 +20,7 @@ def load_json(json_path):
     abstracts = []
     contents = []
     f = open(json_path, 'r')
-    for line in tqdm(f):
+    for line in f:
         record = json.loads(line)
         abstract = ''
         content = ''
@@ -34,6 +34,17 @@ def load_json(json_path):
         abstracts.append(abstract)
         contents.append(content)
     return records, abstracts, contents
+
+def load_corpus(corpus_path):
+    texts = []
+    with open(corpus_path) as IN:
+        for line in IN:
+            tmp = line.split('\t')
+            if len(tmp) > 0:
+                texts.append(tmp[1].split(';'))
+            else:
+                texts.append([])
+    return texts
 
 def convert_line_number(old_ids):
     old_file = '/shared/data/qiz3/text_summ/data/NYT_sports.token'
@@ -96,7 +107,7 @@ def calculate_compression(abstract, content):
 def collect_set_fragment(records, passage_ids):
     fragments = []
     for idx in passage_ids:
-        print(idx, records[idx]['abstract'],records[idx]['lead_3'])
+        #print(idx, records[idx]['abstract'],records[idx]['lead_3'])
         f = collect_extractive_fragments(word_tokenize(records[idx]['abstract']), word_tokenize(records[idx]['content']))
         #print(f)
         fragments.extend(f)
@@ -106,7 +117,7 @@ def calculate_phrase_level_precision(phrases, gt_fragments):
     total_n = len(phrases)
     correct = 0
     correct_phrases = defaultdict(int)
-    for phrase in phrases:
+    for phrase in set(phrases):
         for fragment in gt_fragments:
             if phrase.lower() in '_'.join(fragment).lower():
                 if phrase not in correct_phrases:
@@ -127,9 +138,9 @@ def calculate_AP(ranked_list, ground_truth):
         else:
             gt.append(0)
         predict.append(score)
-    y_true = np.array(gt)
-    y_scores = np.array(predict)
-    return average_precision_score(y_true, y_scores)
+    y_true = np.asarray(gt)
+    y_scores = np.asarray(predict)
+    return sum(y_true) / len(y_true), average_precision_score(y_true, y_scores)
 
 def calculate_DCG(ranked_list, ground_truth, normalized=False):
     score = 0.
@@ -140,6 +151,16 @@ def calculate_DCG(ranked_list, ground_truth, normalized=False):
             continue
         score += ground_truth[phrase] * 1.0 / math.log(2 + idx)
     return score
+
+def load_targetphrases(corpus, doc_ids):
+    target_phrases = set()
+    for doc_id in doc_ids:
+        #sentence = corpus[doc_id]
+        phrases = corpus[doc_id]
+        #phrases = re.findall('<phrase>.*?</phrase>', sentence)
+        #phrases = [phrase[8:-9].replace(' ', '_').lower() for phrase in phrases]
+        target_phrases |= set(phrases)
+    return target_phrases
 
 def pick_sentences(phrase_scores, budget, passage):
     lambda_ = 0.5
@@ -208,33 +229,61 @@ if __name__ == '__main__':
         ##########################
         # Single doc rouge block #
         ##########################
-
-        doc_id = 5804
-        budget = 500
-        passages = read_passage()
-        json_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json'
-        records, abstracts, contents = load_json(json_path)
-        ranked_list = pickle.load(open('../models/data/ranked_list.p', 'rb'))
-        phrase_scores = {t[0]:t[1] for t in ranked_list}
-        sentences_choice = pick_sentences(phrase_scores, 500, passages[doc_id])
-        rouge_scores = evaluate_rouge(abstracts[doc_id], ' '.join(sentences_choice))
-        embed()
-        exit()
+        with open(sys.argv[2]) as IN:
+            tmp = IN.readline()
+            doc_id = int(tmp.strip())
+            for line in IN:
+                tmp = line.strip.split(' ')
+                ranked_list.append([tmp[0], tmp[1]])
+            budget = 500
+            passages = read_passage()
+            json_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json'
+            records, abstracts, contents = load_json(json_path)
+            ranked_list = pickle.load(open('../models/data/ranked_list.p', 'rb'))
+            phrase_scores = {t[0]:t[1] for t in ranked_list}
+            sentences_choice = pick_sentences(phrase_scores, 500, passages[doc_id])
+            rouge_scores = evaluate_rouge(abstracts[doc_id], ' '.join(sentences_choice))
     elif sys.argv[1] == 'eval-multi':
         #####################
         # Phrase eval block #
         #####################
         json_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json'
         records, abstracts, contents = load_json(json_path)
-        phrases = pickle.load(open('../models/data/target_phrases.p', 'rb'))
+        #phrases = pickle.load(open('/shared/data/qiz3/text_summ/text_summarization/models/data/target_phrases.p', 'rb'))
         #gt_fragments = collect_set_fragment(records, [846, 845, 2394, 2904, 2633, 2565, 2956, 2728, 2491])
-        gt_fragments = collect_set_fragment(records, [5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945])
-        #
-        _, gt = calculate_phrase_level_precision(phrases, gt_fragments)
+        
 
-        ranked_list = pickle.load(open('../models/data/ranked_list.p', 'rb'))
-        #ap = calculate_AP(ranked_list, gt.keys())
+        #Qi's phrase version seems to be different with Jingjing's dumped file
+        corpus = load_corpus('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+        #corpus = load_corpus('/shared/data/qiz3/text_summ/text_summarization/preprocess/AutoPhrase/models/NYT/segmentation.txt')
+        ranked_list = []
+        ps, aps, dcgs = [], [], []
+        with open(sys.argv[2]) as FILE:
+            file_list = FILE.readlines()
+            for file_path in file_list:
+                IN = open(file_path.strip(), 'r')
+                tmp = IN.readline()
+                doc_ids = list(map(int, tmp.strip().split(' ')))
+                for line in IN:
+                    tmp = line.strip().split(' ')
+                    ranked_list.append([tmp[0], float(tmp[1])])
+                gt_fragments = collect_set_fragment(records, doc_ids)
+                #
+                phrases = load_targetphrases(corpus, doc_ids)
+                if len(gt_fragments) == 0:
+                    continue
+                _, gt = calculate_phrase_level_precision(phrases, gt_fragments)
+                #print(gt_fragments)
+                #ranked_list = pickle.load(open('../models/data/ranked_list.p', 'rb'))
+                p, ap = calculate_AP(ranked_list, gt.keys())
 
-        dcg = calculate_DCG(ranked_list, gt)
-        embed()
-        exit()
+                dcg = calculate_DCG(ranked_list, gt)
+                
+                ps.append(p)
+                aps.append(ap)
+                dcgs.append(dcg)
+                print("Coverage of AutoPhrase:{}, Precision:{}, MAP:{}, DCG:{}".format(_, p, ap, dcg))
+                IN.close()
+                #break
+        print("Mirco-coverage of AutoPhrase:{}, Precision:{}, MAP:{}, DCG:{}".format(_, sum(ps)/len(ps), 
+            sum(aps)/len(aps), sum(dcgs)/len(dcgs)))

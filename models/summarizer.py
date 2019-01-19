@@ -19,7 +19,7 @@ from phraseExtractor import phraseExtractor
 def seedRanker(target_phrases, similarity_scores, phrase2idx, reweight=None, sink=[]):
     # Textrank.
     threshold = 0.0001
-    alpha = 0.5
+    alpha = 0.85
 
     normalized_sim = np.zeros(similarity_scores.shape)
     for i in range(similarity_scores.shape[0]):
@@ -38,11 +38,11 @@ def seedRanker(target_phrases, similarity_scores, phrase2idx, reweight=None, sin
             if t in sink:
                 I[phrase2idx[t],phrase2idx[t]] = 0
 
-    weight = np.ones([num_target])
+    weight = np.zeros([num_target])
     if reweight:
         for t in target_phrases:
             if t in reweight:
-                weight[phrase2idx[t]] = reweight[t] 
+                weight[phrase2idx[t]] = 1
     
     scores = 1.0 / num_target * np.ones([num_target])
     #topic_scores = scores.copy()
