@@ -14,14 +14,15 @@ from copy import deepcopy
 
 relation_dic=defaultdict(int)
 class WikidataLinker:
-	def __init__(self,relation_list=None):
+	def __init__(self,relation_list1=None, relation_list2=None):
 		self.tid2title=defaultdict(str)
 		#self.title2tid=defaultdict(str)
 		self.client = MongoClient('mongodb://dmserv4.cs.illinois.edu:27017')
 		self.db=self.client.wikidata
 		self.property=defaultdict(int)
 		self.kb={}
-		self.relation_list = relation_list
+		self.relation_list1 = relation_list1
+		self.relation_list2 = relation_list2
 		self.p_list=[]
 
 	def wid2title(self,wid):
@@ -60,11 +61,15 @@ class WikidataLinker:
 					if obj_wid not in adj_nodes and self.wid2title(obj_wid)!='':
 						#print(obj_wid,self.wid2title(obj_wid))
 						if (wid,obj_wid) not in self.kb:
-							if not self.relation_list or p in self.relation_list:
-								if not self.relation_list:
+							if hop == 1:
+								relation_list = self.relation_list1
+							else:
+								relation_list = self.relation_list2
+							if not relation_list or p in relation_list:
+								if not relation_list:
 									self.kb[(wid, obj_wid)] = (0, hop)
 								else:
-									self.kb[(wid,obj_wid)] = (self.relation_list.index(p), hop)
+									self.kb[(wid,obj_wid)] = (p, hop)
 						if (wid, obj_wid) in self.kb:
 							adj_nodes.add(obj_wid)
 		return adj_nodes

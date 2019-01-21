@@ -210,19 +210,19 @@ def read_passage(seg_file='/shared/data/qiz3/text_summ/src/jt_code/HiExpan-maste
 if __name__ == '__main__':
     if sys.argv[1] == 'generate':
         ##########################
-        # TODO: (jingjing)
+        # Here we're not putting the process of generating doc_id lists here because \
+        #     the generated docs still need to be manually examined.
         # Automatic generate mutiple test set #
         # use NYT category to generate similar documents
         ##########################
-        cnt = 0
-        with open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json') as IN, open('terrorism_case.txt', 'w') as OUT:
-            for line in IN:
+        docs = eval(sys.argv[2])
+        with open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json') as IN, open('target_content.txt', 'w') as OUT:
+            for idx, line in enumerate(IN):
+                if idx not in docs:
+                    continue
                 tmp = json.loads(line)
-                for t in tmp['type']:
-                    if 'Top/News/U.S.' in t and 'terrorism' in ' '.join(tmp['abstract']):
-                        cnt += 1
-                        OUT.write(' '.join(tmp['content']) + '\n')
-                        break
+                OUT.write(' '.join(tmp['content']) + '\n')
+                break
         #print(cnt)
     
     elif sys.argv[1] == 'eval-single':

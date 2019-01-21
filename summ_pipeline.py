@@ -10,11 +10,15 @@ from summarizer import collect_statistics, build_in_domain_dict, generate_caseOL
 from summarizer import textrank, ensembleSumm, seedRanker
 
 #relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
-relation_list=['P31', 'P279', 'P361']
+# relation_list1: hop=1, relation_list2: hop>1
+relation_cat, reversed_hier, relation_list1 = generate_relations()
+#relation_list1= ['P85', 'P86', 'P87', 'P162', 'P175', 'P264', 'P358', 'P406', 'P412', 'P434', 'P658', 'P676', 'P870', 'P942', 'P1191', 'P1303']
+relation_list2 = ['P31', 'P279', 'P361']
 config = {'batch_size': 128, 'epoch_number': 101, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':0,
 		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'knowledge2skip_gram', 'id':3,
-		'preprocess': True, 'relation_list':relation_list, 'doc_emb_path': 'intermediate_data/pretrain_doc.emb',
-		'label_emb_path': 'intermediate_data/pretrain_label.emb', 'stage': 'test', 'summ_method': 'textrank'}
+		'preprocess': True, 'relation_list1':relation_list1, 'relation_list2': relation_list2,
+		  'doc_emb_path': 'intermediate_data/pretrain_doc.emb', 'label_emb_path': 'intermediate_data/pretrain_label.emb',
+		  'stage': 'train', 'summ_method': 'caseOLAP'}
 
 #P54 team P31 instance of P27 nationality P641 sports P413 position
 #P106 occupation P1344 participant P17 country P69 educate P279 subclass of P463 member of P641 sport
@@ -42,15 +46,15 @@ if __name__ == '__main__':
 	if config['stage'] == 'train':
 		if config['preprocess']:
 			
-			tmp = WikidataLinker(relation_list)
+			tmp = WikidataLinker(relation_list1, relation_list2)
 			graph_builder = textGraph(tmp)
 			graph_builder.load_stopwords('/shared/data/qiz3/text_summ/data/stopwords.txt')
 			#graph_builder._load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.txt')
 			print("Extracting Hierarchies")
 			text_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.txt'.format(config['dataset'])
 			json_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.json'.format(config['dataset'])
-			if len(config['relation_list']) > 0:
-				h, t2wid, wid2surface = graph_builder.load_corpus(text_path, json_path, attn=True)
+			if len(config['relation_list2']) > 0:
+				h, t2wid, wid2surface = graph_builder.load_corpus(text_path, json_path, relation_cat, reversed_hier, attn=True)
 				embed()
 				h.save_hierarchy("intermediate_data/{}_{}_hierarchies.p".format(config['method'], config['dataset']))
 				#h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
