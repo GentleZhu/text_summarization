@@ -32,5 +32,5 @@ Although not that neccesarry, we keep single document summarization as our side 
 
 ### Multiple document summarization
 ```
-python evaluation/summ_eval.py eval-multi intermediate_data/textrank_NYT_full_set0.txt
+python evaluation/summ_eval.py eval-multi intermediate_data/textrank_NYT_full_filelist.txt
 ```
