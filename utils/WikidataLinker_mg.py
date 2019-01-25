@@ -17,7 +17,7 @@ class WikidataLinker:
 	def __init__(self,relation_list1=None, relation_list2=None):
 		self.tid2title=defaultdict(str)
 		#self.title2tid=defaultdict(str)
-		self.client = MongoClient('mongodb://dmserv4.cs.illinois.edu:27017')
+		self.client = MongoClient('mongodb://dmserv4.cs.illinois.edu:27018')
 		self.db=self.client.wikidata
 		self.property=defaultdict(int)
 		self.kb={}
@@ -83,7 +83,7 @@ class WikidataLinker:
 					continue
 				adj_nodes=self.get_adj(kw, current_hop)
 				for node in adj_nodes:
-					if node not in kws:
+					if True:#node not in kws:
 						kws[node] = current_hop + 1
 
 			temp_kws=deepcopy(kws)

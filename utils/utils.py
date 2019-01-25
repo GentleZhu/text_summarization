@@ -12,6 +12,7 @@ from copy import deepcopy
 import pickle
 import operator
 import math
+from nltk.tokenize import sent_tokenize, word_tokenize
 
 class textGraph(object):
     """docstring for textGraph"""
@@ -67,16 +68,14 @@ class textGraph(object):
 
         # Trim extra whitespace
         self.texts = [' '.join(x.split()) for x in texts]
-        
+    
+    
+    def normalize(self, text):
+        return [word.strip(string.punctuation).lower() for word in text.split() if word not in (self.stopwords)]
         #return(texts)
 
     #add mapping here
     def build_dictionary(self, vocabulary_size = 13000, freq = 10):
-        syn_set = {
-        'american_football': 'football',
-        'association_football': 'soccer',
-        'ice_hockey': 'hockey'
-        }
         # Turn sentences (list of strings) into lists of words
         split_sentences = [s.split() for s in self.texts]
         split_tuples = [s[:2] for s in self.tuples]
@@ -137,12 +136,12 @@ class textGraph(object):
             tup_data.append(tup[-1])
             self.tuple_data.append(tup_data)
 
-    def load_corpus(self, corpusIn, jsonIn, relation_cat, reversed_hier, attn = False):
+    def load_corpus(self, corpusIn, jsonIn, relation_cat = None, reversed_hier = None, attn = False):
         cnt = 0
         ner_set = defaultdict(int)
         ner_types = set()
         with open(corpusIn) as IN, open(jsonIn) as JSON:
-            for cline, jline in tqdm(list(zip(IN.readlines(), JSON.readlines()))[:100]):
+            for cline, jline in tqdm(list(zip(IN.readlines(), JSON.readlines()))):
                 if attn:
                     ner = json.loads(jline)['phrases']
                     for n in ner:
@@ -172,14 +171,25 @@ class textGraph(object):
 
     def load_concepts(self, corpusIn, concepts):
         with open(corpusIn) as IN:
-            for line in tqdm(list(IN.readlines())):
-                tokens = line.strip().split(' ')
+            for idx,line in enumerate(tqdm(list(IN.readlines()))):
+                tokens = self.normalize(line.strip())
                 for concept in concepts:
+                    #concept.link_corpus(tokens)
+                #break
                     self.tuples.extend(concept.link_corpus(tokens))
+                break
 
         #for concept in concepts:
         #    print(concept.output_concepts())
         #print(self.tuples)
+    
+    def calculate_DIH(self, a, b, concept):
+        w_a, w_b = 0,0
+        if (a,b) in concept.count:
+            w_a = concept.count[(a,b)]
+        if (b,a) in concept.count:
+            w_b = concept.count[(b,a)]
+        return w_a / concept.count[a] - w_b / concept.count[b], w_a, w_b, concept.count[a], concept.count[b]
 
     # backup functions
     def _load_corpus(self, corpusIn, jsonIn, attn = False):
@@ -420,34 +430,35 @@ class Hierarchy:
 
         return all_paths, reversed_paths
 
-class Concept(object):
+class Concept:
     """
     docstring for Concept
     input: [(u'root_node', height), relation_list], e.g. [(u'type of sports',2), [2,4]]
+    input: [(u'root_node', height)], e.g. [(u'type of sports',2), [2]
     """
     def __init__(self, hierarchy):
-        super(Concept, self).__init__()
         self.hierarchy = hierarchy
         self.links = defaultdict(list)
-        self.layers = [[]]
+        self.nodes = []
+        self.count = defaultdict(int)
+        #self.inter_count = defaultdict(int)
         #print(self.hierarchy.p2c['type of sport'])
         
-    def dfs(self, node, relations, depth):
-        for v in self.hierarchy.p2c[node][relations[depth]]:
-            #print('{}{}'.format('\t'*(depth+1), v[0].encode('ascii','ignore')))
-            self.layers[depth].append(v[0])
+    def dfs(self, node, height):
+        for v in self.hierarchy.p2c[node][height]:
+            #print('{}{}'.format('\t'*(self.height - height), v[0].encode('ascii','ignore')))
+            self.nodes.add(self.normalize(v[0]))
 
             if v[1] > 0:
-                self.dfs(v, relations, depth+1)
+                self.dfs(v, height - 1)
                 #self.links[v[0]].append([node[0], relations[depth]])
-                self.links[v[0]].append([node[0], relations[depth]])
+            self.links[self.normalize(v[0])].append(self.normalize(node[0]))
 
     def construct_concepts(self, _concept):
-        self.height = len(_concept[1])
-        self.layers = [[] for i in range(self.height)]
+        self.height = _concept[1]
+        self.nodes = set([_concept[0][0]])
         self.root = _concept[0]
-        relations = _concept[1]
-        self.dfs(self.root, relations, 0)
+        self.dfs(self.root, self.height - 1)
 
     def output_concepts(self, path):
         output_tuple = []
@@ -463,27 +474,36 @@ class Concept(object):
     def concept_link(self, phrases):
         linked_nodes = set()
         for p in phrases:
-            if p in self.links:
-                linked_nodes = linked_nodes.union(map(lambda x:x[0], self.links[p]))
+            if p in self.nodes:
+                pass
         return linked_nodes
 
     def normalize(self, phrase):
+        #return phrase.lower().replace(' ', '_')
         return phrase.lower().replace(' ', '_')
 
     def link_corpus(self, phrases):
-        syn_set = {
-        'football': 'American football',
-        'soccer': 'association football',
-        'hockey': 'ice hockey'
-        }
-        linked_nodes = []
         #print(self.links)
-        for p in phrases:
-            p = p.replace('_', ' ')
+        '''
+        phrase_set = set(phrases)
+        for p in phrase_set:
+            if p in self.nodes:
+                self.count[p] += phrases.count(p)
+                if p in self.links:
+                    for l in self.links[p]:
+                        #must occur together
+                        if l in phrase_set:
+                            self.count[(p,l)] += phrases.count(p)
+                            self.count[(l,p)] += phrases.count(l)
+        ''' 
+        linked_nodes = []
+        phrase_set = set(phrases)
+        for p in phrase_set:
             if p in self.links:
-                #print(self.links[p])
-                #print(list(map(lambda x:[self.normalize(p), self.normalize(x[0]), x[1]], self.links[p])))
-                linked_nodes.extend(map(lambda x:[self.normalize(p), self.normalize(p) if x[0] == self.root[0] else self.normalize(x[0]), x[1]], self.links[p]))
+                linked_nodes.extend(map(lambda x:[p, x], self.links[p]))
+        #print(self.links[p])
+        #print(list(map(lambda x:[self.normalize(p), self.normalize(x[0]), x[1]], self.links[p])))
+        #linked_nodes.extend(map(lambda x:[self.normalize(p), self.normalize(p) if x[0] == self.root[0] else self.normalize(x[0]), x[1]], self.links[p]))
         return linked_nodes
 
 def rank_hierarchies(hierarchy, option='A'):

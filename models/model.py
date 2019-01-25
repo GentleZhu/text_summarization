@@ -330,6 +330,63 @@ class KnowledgeFineTune(nn.Module):
             word_ids = input_labels.cuda()
             doc_id = input_doc.cuda()
             label_id = out_labels.cuda()
+
+        w = self.word_embed(word_ids)
+        scores = self.attn(w, self.doc_embed(doc_id))
+        weights = F.softmax(scores)
+        output_doc = weights.unsqueeze(1).bmm(x).squeeze(1)
+        
+        noise = Variable(t.Tensor(num_sampled).uniform_(0, self.num_docs - 1).long())
+        x = t.cat((output_doc, self.doc_embed(noise)))
+
+        scores = t.mm(x, self.label_embed(label_id).transpose())
+        
+        loss = F.relu(scores[1:] - scores[0] + 1)
+
+        return 
+
+    def input_embeddings(self):
+        return self.word_embed.weight.data.cpu().numpy()
+
+    def doc_embeddings(self):
+        return self.doc_embed.weight.data.cpu().numpy()
+
+class KnowledgeEmbed(nn.Module):
+    def __init__(self, num_words, num_docs, num_labels, embed_size):
+        """
+        :param num_classes: An int. The number of possible classes.
+        :param embed_size: An int. EmbeddingLockup size
+        :param num_sampled: An int. The number of sampled from noise examples
+        :param weights: A list of non negative floats. Class weights. None if
+            using uniform sampling. The weights are calculated prior to
+            estimation and can be of any form, e.g equation (5) in [1]
+        """
+
+        super(KnowledgeEmbed, self).__init__()
+
+        self.num_words = num_words
+        self.num_docs = num_docs
+        self.num_labels = num_labels
+        self.embed_size = embed_size
+
+        self.word_embed = nn.Embedding(self.num_words, self.embed_size, sparse=True)
+        self.word_embed.weight = Parameter(t.FloatTensor(self.num_words, self.embed_size).uniform_(-1, 1))
+
+        self.doc_embed = nn.Embedding(self.num_docs, self.embed_size, sparse=True)
+        self.doc_embed.weight = Parameter(t.FloatTensor(self.num_docs, self.embed_size).uniform_(-1, 1))
+
+        self.label_embed = nn.Embedding(self.num_docs, self.embed_size, sparse=True)
+        self.label_embed.weight = Parameter(t.FloatTensor(self.num_docs, self.embed_size).uniform_(-1, 1))
+
+        self.nce_loss = L.NCE_SIGMOID()
+        self.hinge_loss = L.NCE_HINGE()
+
+    def forward(self, dt, tl, ll, num_sampled, opt):
+        if use_cuda:
+            word_ids = input_labels.cuda()
+            doc_id = input_doc.cuda()
+            label_id = out_labels.cuda()
+
         w = self.word_embed(word_ids)
         scores = self.attn(w, self.doc_embed(doc_id))
         weights = F.softmax(scores)
