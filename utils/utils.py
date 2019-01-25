@@ -284,31 +284,36 @@ class textGraph(object):
         inputs, outputs = [], []
 
 class Hierarchy:
-    def __init__(self, links, relation_cat, reversed_hier):
+    def __init__(self, links, relation_cat, reversed_hier, option='R'):
         # filter: whether filter hierarchy based on number of children
         self.links = links
         self.entity_node = set()
         for link in self.links:
             self.entity_node.add((link[0], link[-1] - 1))
-            #self.entity_node.add((link[1], link[-1]))
+            if option == 'E':
+                self.entity_node.add((link[1], link[-1]))
 
         self.p2c = defaultdict(lambda: defaultdict(list))
         self.c2p = defaultdict(lambda: defaultdict(list))
         for link in self.links:
-            parent_node = (relation_cat[link[-2]], link[-1])
+            if option == 'R':
+                parent_node = (relation_cat[link[-2]], link[-1])
+            else:
+                parent_node = (link[1], link[-1])
             child_node = (link[0], link[-1] - 1)
-            relation_type = 0
+            relation_type = link[-1] - 1
             if child_node not in self.p2c[parent_node][relation_type]:
                 self.p2c[parent_node][relation_type].append(child_node)
             if parent_node not in self.c2p[child_node][relation_type]:
                 self.c2p[child_node][relation_type].append(parent_node)
 
-        for c in reversed_hier:
-            if (c, 1) in self.p2c:
-                if (c, 1) not in self.p2c[(reversed_hier[c], 2)][1]:
-                    self.p2c[(reversed_hier[c], 2)][1].append((c, 1))
-                if (reversed_hier[c], 2) not in self.c2p[(c, 1)][1]:
-                    self.c2p[(c, 1)][1].append((reversed_hier[c], 2))
+        if option == 'R':
+            for c in reversed_hier:
+                if (c, 1) in self.p2c:
+                    if (c, 1) not in self.p2c[(reversed_hier[c], 2)][1]:
+                        self.p2c[(reversed_hier[c], 2)][1].append((c, 1))
+                    if (reversed_hier[c], 2) not in self.c2p[(c, 1)][1]:
+                        self.c2p[(c, 1)][1].append((reversed_hier[c], 2))
 
         self.layer_node = defaultdict(list)
         for entity_node in self.entity_node:
@@ -813,24 +818,6 @@ def generate_relations():
                               'P4357', 'P4456', 'P4534', 'P4535', 'P4608', 'P4634', 'P5058', 'P5068', 'P5615', 'P5616',
                              'P5652', 'P5717', 'P5718', 'P5802', 'P5807', 'P5808', 'P5809', 'P5833', 'P5935', 'P5964',
                              'P6113', 'P6132']
-    relations['Software'] = ['P123', 'P178', 'P277', 'P306', 'P348', 'P400', 'P404', 'P408', 'P479', 'P751', 'P756',
-                             'P852', 'P853', 'P908', 'P914', 'P916', 'P943', 'P1019', 'P1032', 'P1065', 'P1072',
-                             'P1073', 'P1195', 'P1324', 'P1372', 'P1401', 'P1414', 'P1547', 'P1712', 'P1733', 'P1845',
-                             'P1933', 'P2078', 'P2209', 'P2379', 'P2451', 'P2537', 'P2572', 'P2599', 'P2606', 'P2699',
-                             'P2700', 'P2701', 'P2725', 'P2749', 'P2816', 'P2858', 'P2992', 'P3033', 'P3112', 'P3156',
-                             'P3180', 'P3374', 'P3418', 'P3435', 'P3442', 'P3454', 'P3473', 'P3483', 'P3499', 'P3511',
-                             'P3575', 'P3597', 'P3861', 'P3913', 'P3966', 'P3985', 'P4043', 'P4092', 'P4107', 'P4162',
-                             'P4387', 'P4428', 'P4435', 'P4467', 'P4477', 'P4575', 'P4653', 'P4654', 'P4669', 'P4671',
-                             'P4685', 'P4705', 'P4710', 'P4742', 'P4763', 'P4769', 'P4776', 'P4806', 'P4809', 'P4810',
-                             'P4816', 'P4837', 'P4839', 'P4846', 'P4847', 'P4857', 'P4858', 'P4859', 'P4916', 'P4917',
-                             'P4919', 'P4960', 'P4961', 'P4962', 'P4965', 'P4998', 'P5047', 'P5107', 'P5116', 'P5117',
-                             'P5118', 'P5119', 'P5196', 'P5247', 'P5290', 'P5305', 'P5345', 'P5360', 'P5367', 'P5371',
-                             'P5379', 'P5382', 'P5385', 'P5453', 'P5494', 'P5565', 'P5566', 'P5568', 'P5585', 'P5590',
-                             'P5659', 'P5780', 'P5794', 'P5795', 'P5796', 'P5797', 'P5838', 'P5885', 'P5936', 'P5944',
-                             'P5971', 'P5999', 'P6032', 'P6068', 'P6078', 'P6170', 'P6172', 'P6182', 'P6197', 'P6229',
-                             'P6267', 'P6269', 'P6337', 'P6352']
-    relations['Hardware'] = ['P880', 'P1041', 'P1068', 'P1141', 'P1641', 'P2149', 'P2150', 'P2157', 'P2560', 'P2928',
-                             'P2935', 'P3559', 'P4653', 'P4654', 'P4788']
     relations['Coporations'] = ['P169', 'P199', 'P249', 'P355', 'P749', 'P414', 'P1128', 'P1278', 'P1454', 'P1955',
                                 'P2782', 'P2954', 'P3225', 'P3377', 'P3875', 'P3979', 'P4156', 'P4443', 'P4444',
                                 'P4445', 'P4446', 'P4447', 'P4448']
@@ -855,7 +842,12 @@ def generate_relations():
                               'P4393', 'P4599', 'P4600', 'P4600', 'P4599', 'P4732', 'P4770', 'P4866', 'P4951', 'P4952',
                               'P5000', 'P5040', 'P5041', 'P5042', 'P5219', 'P5220', 'P5926', 'P5929', 'P6185', 'P6272',
                               'P6274']
-    relations['Physics'] = ['P105', 'P128', 'P141', 'P171', 'P181', 'P183', 'P225', 'P351', 'P352', 'P353', 'P354',
+    relations['Physics'] = ['P129', 'P515', 'P517', 'P816', 'P922', 'P1097', 'P1109', 'P1360', 'P1645', 'P2055',
+                            'P2152', 'P2200', 'P2201', 'P2222', 'P2223', 'P2375', 'P2376', 'P2571', 'P2575', 'P2610',
+                            'P2930', 'P3737', 'P3738', 'P3891', 'P4020', 'P4183', 'P4184', 'P4501', 'P5479', 'P5480',
+                            'P5483', 'P5520', 'P5524', 'P5529', 'P5575', 'P5589', 'P5593', 'P5594', 'P5596', 'P5668',
+                            'P5669', 'P5679', 'P6073', 'P6212']
+    relations['Biology'] = ['P105', 'P128', 'P141', 'P171', 'P181', 'P183', 'P225', 'P351', 'P352', 'P353', 'P354',
                             'P405', 'P427', 'P428', 'P486', 'P492', 'P493', 'P494', 'P524', 'P557', 'P563', 'P566',
                             'P2868', 'P574', 'P586', 'P591', 'P592', 'P593', 'P594', 'P595', 'P604', 'P627', 'P636',
                             'P637', 'P638', 'P639', 'P644', 'P645', 'P652', 'P653', 'P662', 'P663', 'P665', 'P667',
@@ -935,11 +927,10 @@ def generate_relations():
         for r in relations[cat]:
             relation_cat[r] = cat
     upper_hierarchy = {}
-    upper_hierarchy['Science'] = ['Astronomy', 'Geology', 'Maths', 'Physics', 'Chemistry']
+    upper_hierarchy['Science'] = ['Astronomy', 'Geology', 'Maths', 'Physics', 'Biology', 'Chemistry']
     upper_hierarchy['Politics'] = ['Elections', 'Political_other']
     upper_hierarchy['Art'] = ['Photography', 'Music', 'Movies', 'Fashion', 'Literature', 'Television', 'Architecture',
                               'Artworks', 'Sculptures', 'Theatres']
-    upper_hierarchy['CS'] = ['Software', 'Hardware']
     upper_hierarchy['Economics'] = ['Coporations', 'Manufactures', 'Economics_other']
     reversed_hier = {}
     for p in upper_hierarchy:
