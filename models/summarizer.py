@@ -4,6 +4,7 @@ import sys
 from tqdm import tqdm
 import random
 from gensim.models import Word2Vec
+from gensim.models.doc2vec import Doc2Vec, TaggedDocument
 sys.path.append('../')
 
 from collections import defaultdict
@@ -371,6 +372,53 @@ def load_emb(emb_path):
             emb[phrase] = em
     return emb
 
+def load_segmented_corpus(segIn, stopword_path):
+    doc_id = 0
+    passages = []
+    stopwords = set()
+    with open(stopword_path) as IN:
+        for line in IN:
+            stopwords.add(line.strip())
+    IN_PHRASE_FLAG = False
+    for cline in tqdm(segIn):
+        doc_id += 1
+        cline = cline.replace('<phrase>', '<phrase> ').replace('</phrase>', ' </phrase>').replace('\n', '')
+        words = cline.split(' ')
+        tmp_passage = []
+        token_list = []
+        for t in words:
+            t = t.lower()
+            if t == '<phrase>':
+                token_list = []
+                IN_PHRASE_FLAG = True
+            elif t == '</phrase>':
+                IN_PHRASE_FLAG = False
+                tmp_passage.append('_'.join(token_list))
+            elif IN_PHRASE_FLAG:
+                token_list.append(t)
+            else:
+                if t in stopwords or t in ['.', ',', '?', '!']:
+                    continue
+                tmp_passage.append(t)
+        passages.append(tmp_passage)
+    return passages
+
+def train_doc2vec(passages):
+    tagged_data = [TaggedDocument(words=d_, tags=[str(i)]) for i, d_ in enumerate(passages)]
+    model = Doc2Vec(tagged_data, dm=1, size=100, window=5, min_count=1, workers=10)
+    return model
+
+def rank_phrase_emb(phrase2idx, model, avg_doc):
+    ranked_list = []
+    for phrase in phrase2idx:
+        if phrase not in model.wv.vocab:
+            ranked_list.append((phrase, 0.0))
+        v = model.wv[phrase]
+        sim = 1 - scipy.spatial.distance.cosine(v, avg_doc)
+        ranked_list.append((phrase, sim))
+    ranked_list = sorted(ranked_list, key=lambda t: -t[1])
+    return ranked_list
+
 def build_in_domain_dict(target_docs, document_phrase_cnt):
     phrase2idx = generate_candidate_phrases(document_phrase_cnt, target_docs)
     idx2phrase = {phrase2idx[k]: k for k in phrase2idx}
@@ -414,12 +462,22 @@ def pick_sentences(phrase_scores, budget, passage):
 def main():
     target_docs = [846, 845, 2394, 2904, 2633, 2565, 2956, 2728, 2491]
     #target_docs = [846]
-    #segIn = open('/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/sports/intermediate/segmentation.txt')
-    #passage = segIn.readlines()
+    segIn = open('/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/sports/intermediate/segmentation.txt')
+    stopword_path = '../../data/stopwords.txt'
+    passages = load_segmented_corpus(segIn, stopword_path)
     document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/sports.txt')
     siblings, twin_docs = load_doc_sets()
 
     phrase2idx, idx2phrase = build_in_domain_dict(target_docs, document_phrase_cnt)
+
+    ####################
+    # EmbedRank block ##
+    ####################
+    model = train_doc2vec(passages)
+    avg_vec = np.mean([model.docvecs[str(i)] for i in target_docs], axis=0)
+    ranked_list = rank_phrase_emb(phrase2idx, model, avg_vec)
+    embed()
+    exit()
 
     ###################
     # Textrank block ##
