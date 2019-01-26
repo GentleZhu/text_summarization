@@ -104,6 +104,8 @@ def is_eng(word):
 def eval_duc_full():
     cwd = os.getcwd()
     os.chdir('/shared/data/qiz3/text_summ/data/TextSummarizer-master/C_Rouge')
+    if os.path.exists('test.txt'):
+        os.system('rm test.txt')
     for s in tqdm(duc_set):
         cmd_list = ''
         cmd_list += 'java -cp C_ROUGE.jar'

@@ -5,7 +5,9 @@ from IPython import embed
 
 def main():
     threshold = 0.0001
+    para = 0.5
     alpha = 0.85
+    beta = 0.1
     budget = 665
     stopword_path = '/shared/data/qiz3/text_summ/data/stopwords.txt'
     for ii, s in enumerate(duc_set):
@@ -33,26 +35,42 @@ def main():
                 break
             current_scores = scores
 
-        ranked_list = []
-        for idx, score in enumerate(scores):
-            ranked_list.append((idx, scores[idx]))
-        ranked_list = sorted(ranked_list, key=lambda t: -t[1])
+        #ranked_list = []
+        #for idx, score in enumerate(scores):
+        #    ranked_list.append((idx, scores[idx]))
+        #ranked_list = sorted(ranked_list, key=lambda t: -t[1])
+
+        chosen = [False for _ in raw_sentences]
+        summary_id = []
 
         current_len = 0
-        idx = 0
-        summary = ''
         while current_len < budget:
-            if len(raw_sentences[ranked_list[idx][0]]) + current_len > budget:
+            maxscore = -9999
+            pick = -1
+            for i in range(sent_num):
+                if chosen[i]:
+                    continue
+                tmp_score = scores[i]
+                for j in summary_id:
+                    if scores[i] - similarity_scores[i][j] * scores[j] * para < tmp_score:
+                        tmp_score = scores[i] - similarity_scores[i][j] * scores[j] * para
+                new_score = tmp_score / math.pow(len(passages[i]), beta)
+                if new_score > maxscore and len(raw_sentences[i]) + current_len < budget:
+                    maxscore = new_score
+                    pick = i
+            if pick == -1:
                 break
-            current_len += len(raw_sentences[ranked_list[idx][0]])
-            summary += raw_sentences[ranked_list[idx][0]]
-            idx += 1
+            current_len += len(raw_sentences[pick])
+            chosen[pick] = True
+            summary_id.append(pick)
+
+        summary = ''
+        for id in summary_id:
+            summary += raw_sentences[id]
+
         f = open('res/' + s + '.txt', 'w')
         f.write(summary)
         f.close()
-
-    embed()
-    exit()
 
 def calculate_similarity(passages):
     sent_num = len(passages)

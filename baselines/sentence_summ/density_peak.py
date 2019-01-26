@@ -1,5 +1,6 @@
 from scipy import spatial
 import math
+import numpy as np
 from IPython import embed
 
 from utils import *
@@ -55,14 +56,17 @@ def select_sentences(budget, scores, sentences):
 def main():
     delta = 0.25
     budget = 665
+    para = 0.5
+    beta = 0.1
     stopword_path = '/shared/data/qiz3/text_summ/data/stopwords.txt'
     #corpusIn = open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.txt')
     #target_set = [5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945]
     #passages, raw_sentences = load_corpus(corpusIn, target_set, stopword_path)
     for s in duc_set:
-        if os.path.exists('res/' + s + '.txt'):
-            continue
+        #if os.path.exists('res/' + s + '.txt'):
+        #    continue
         passages, raw_sentences = generate_duc_docs(s, stopword_path)
+        similarity_scores = calculate_similarity(passages)
 
         sent_num = len(passages)
         el, rl = calculate_len(passages, raw_sentences)
@@ -83,9 +87,52 @@ def main():
         summary = ''
         for i in chosen:
             summary += ' ' + raw_sentences[i]
+
+        '''
+        chosen = [False for _ in raw_sentences]
+        summary_id = []
+
+        current_len = 0
+        while current_len < budget:
+            maxscore = -9999
+            pick = -1
+            for i in range(sent_num):
+                if chosen[i]:
+                    continue
+                tmp_score = scores[i]
+                for j in summary_id:
+                    if scores[i] - similarity_scores[i][j] * scores[j] * para < tmp_score:
+                        tmp_score = scores[i] - similarity_scores[i][j] * scores[j] * para
+                new_score = tmp_score / math.pow(len(passages[i]), beta)
+                if new_score > maxscore and len(raw_sentences[i]) + current_len < budget:
+                    maxscore = new_score
+                    pick = i
+            if pick == -1:
+                break
+            current_len += len(raw_sentences[pick])
+            chosen[pick] = True
+            summary_id.append(pick)
+
+        summary = ''
+        for id in summary_id:
+            summary += raw_sentences[id]
+        '''
+
         f = open('res/' + s + '.txt', 'w')
         f.write(summary)
         f.close()
+
+def calculate_similarity(passages):
+    sent_num = len(passages)
+    similarity_scores = np.zeros([sent_num, sent_num])
+    for i in range(sent_num):
+        for j in range(sent_num):
+            if j < i:
+                similarity_scores[i][j] = similarity_scores[j][i]
+            else:
+                sim = len(set(passages[i]) & set(passages[j])) / (math.log(len(set(passages[j])) + 1) + math.log(len(set(passages[j])) + 1))
+                similarity_scores[i][j] = sim
+    return similarity_scores
 
 if __name__ == '__main__':
     main()

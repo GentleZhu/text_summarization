@@ -1,14 +1,15 @@
 import sys
 from tqdm import tqdm
-from data import SummDataset
+from data import SummDataset, KnowledgeEmbedDataset
 import torch.utils.data as tdata
-from model import KnowledgeD2V, KnowledgeSkipGram
-from torch.optim import Adam, SparseAdam, SGD
+from model import KnowledgeD2V, KnowledgeSkipGram, KnowledgeEmbed
+from torch.optim import Adam, SparseAdam, SGD, Adagrad
 import torch as t
 import pickle
+from IPython import embed
 
 
-def Train(config, X, y, num_words, num_docs):
+def Train(config, X, params):
 	if config['method'] == 'knowledge2vec':
 		dataset = SummDataset(X, y)
 		data = tdata.DataLoader(dataset, batch_size = config['batch_size'], shuffle=True)
@@ -89,3 +90,31 @@ def Train(config, X, y, num_words, num_docs):
 				model_path = "{}{}_{}_id_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['id'], epoch)
 				t.save(model.state_dict(), model_path)
 			print("Epoch:{}, Loss:{}, Relational Bias:{}".format(epoch, sum(test_loss), sum(relational_bias)))
+	elif config['method'] == 'KnowledgeEmbed':
+		#print(X[0].shape, X[1].shape)
+		train_loader = tdata.DataLoader(
+             KnowledgeEmbedDataset(X),
+             batch_size=config['batch_size'], shuffle=True, pin_memory=True)
+		num_words, num_docs, num_labels = params
+		t.cuda.set_device(int(config['gpu']))
+		model = KnowledgeEmbed(num_words=num_words, num_docs=num_docs, num_labels=num_labels, embed_size=config['emb_size'])
+
+		optimizer = SGD(params=model.parameters(), lr=0.1)
+
+		model.cuda()
+
+		for epoch in range(config['epoch_number']):
+			epoch_loss = 0.0
+			for batch_data in tqdm(train_loader):
+				#print(batch_data[0][:,0].data.cpu().numpy().tolist())
+				loss = model(batch_data, config['num_sample'])
+				epoch_loss += loss
+				model.zero_grad()
+				loss.backward()
+				optimizer.step()
+
+			if epoch % 5 == 0:
+				model_path = "{}{}_{}_id_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['id'], epoch)
+				t.save(model.state_dict(), model_path)
+			print("Epoch:{}, Loss:{}".format(epoch, epoch_loss))
+			#break

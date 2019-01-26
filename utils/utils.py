@@ -23,6 +23,7 @@ class textGraph(object):
         self.stopwords = set()
         self.Linker = arg
         self.tuples = []
+        self.label2id = dict()
         self.texts = []
 		#self.name2type = dict()
 
@@ -43,6 +44,12 @@ class textGraph(object):
         with open(output_file, 'w') as OUT:
             for k,v in self.name2id.items():
                 OUT.write("{}\t{}\n".format(k,v))
+
+    def dump_label(self, output_file):
+        pickle.dump(self.label2id, open(output_file, 'wb'))
+
+    def load_label(self, input_file):
+        self.label2id = pickle.load(open(input_file, 'rb'))
 
     def translate_emb(self, input_emb, output_emb):
         with open(input_emb) as IN, open(output_emb, 'w', encoding='utf8') as OUT:
@@ -67,7 +74,7 @@ class textGraph(object):
         texts = [' '.join([word.strip(string.punctuation) for word in x.split() if word not in (self.stopwords)]) for x in texts]
 
         # Trim extra whitespace
-        self.texts = [' '.join(x.split()) for x in texts]
+        self.texts = [x.split() for x in texts]
     
     
     def normalize(self, text):
@@ -75,16 +82,9 @@ class textGraph(object):
         #return(texts)
 
     #add mapping here
-    def build_dictionary(self, vocabulary_size = 13000, freq = 10):
+    def build_dictionary(self, vocabulary_size = 200000, freq = 10):
         # Turn sentences (list of strings) into lists of words
-        split_sentences = [s.split() for s in self.texts]
-        split_tuples = [s[:2] for s in self.tuples]
-
-        labels = set(map(lambda x:x[1], self.tuples))
-        #print(labels)
-        #print(split_sentences, split_tuples)
-        split_sentences += split_tuples
-        words = [x for sublist in split_sentences for x in sublist]
+        words = [x for sublist in self.texts for x in sublist]
         
         # Initialize list of [word, word_count] for each word, starting with unknown
         count = [['RARE', -1]]
@@ -96,13 +96,9 @@ class textGraph(object):
         # For each word, that we want in the dictionary, add it, then make it
         # the value of the prior dictionary length
         for word, word_count in count:
-            #if word_count < freq and word not in labels:
-            #    continue
-            if word in syn_set:
-                #print(word, word_count)
-                self.name2id[word] = self.name2id[syn_set[word]]
-            else:
-                self.name2id[word] = len(self.name2id)
+            if word_count < freq:
+                continue
+            self.name2id[word] = len(self.name2id)
         self.id2name = dict(zip(self.name2id.values(), self.name2id.keys()))
         self.num_words = len(self.name2id)
         #return(self.name2id)
@@ -112,29 +108,33 @@ class textGraph(object):
         # Initialize the returned data
         self.data = []
         self.tuple_data = []
+        non_occur = 0
         for sentence in self.texts:
             sentence_data = []
             # For each word, either use selected index or rare word index
-            for word in sentence.split():
+            # Filter out rare words
+            for word in sentence:
                 if word in self.name2id:
                     word_ix = self.name2id[word]
                     sentence_data.append(word_ix)
                 else:
+                    non_occur += 1
                     word_ix = 0
                 
             self.data.append(sentence_data)
+        print("Filtered_phrases in text:{}".format(non_occur))
+        non_occur = 0
         for tup in self.tuples:
-            tup_data = []
-            for word in tup[:2]:
-                if word in self.name2id:
-                    word_ix = self.name2id[word]
-                else:
-                    print(word)
-                    assert True == False
-                    word_ix = 0
-                tup_data.append(word_ix)
-            tup_data.append(tup[-1])
-            self.tuple_data.append(tup_data)
+            word = tup[1]
+            if word in self.name2id:
+                word_ix = self.name2id[word]
+                self.tuple_data.append([self.label2id[tup[0]], word_ix])
+            else:
+                non_occur += 1
+                #print(len(self.name2id))
+                #assert True == False
+                word_ix = 0
+        print("Filtered_phrases:{}".format(non_occur))
 
     def load_corpus(self, corpusIn, jsonIn, relation_cat = None, reversed_hier = None, attn = False):
         cnt = 0
@@ -169,15 +169,27 @@ class textGraph(object):
         if attn:
             return hierarchy, t2wid, wid2surface
 
-    def load_concepts(self, corpusIn, concepts):
-        with open(corpusIn) as IN:
-            for idx,line in enumerate(tqdm(list(IN.readlines()))):
-                tokens = self.normalize(line.strip())
-                for concept in concepts:
-                    #concept.link_corpus(tokens)
-                #break
-                    self.tuples.extend(concept.link_corpus(tokens))
-                break
+    def load_concepts(self, concepts):
+        
+        for concept in concepts:
+            for l in concept.labels:
+                if l not in self.label2id:
+                    self.label2id[l] = len(self.label2id)
+        
+        '''
+        for concept in concepts:
+            for l in concept.links:
+                for v in concept.links[l]:
+                    if v not in self.label2id:
+                        self.label2id[v] = len(self.label2id)
+                        '''
+        self.num_labels = len(self.label2id)
+        for idx,line in enumerate(tqdm(self.texts)):
+            for concept in concepts:
+                #concept.link_corpus(tokens)
+            #break
+                self.tuples.extend(concept.link_corpus(line, idx))
+            #break
 
         #for concept in concepts:
         #    print(concept.output_concepts())
@@ -248,6 +260,9 @@ class textGraph(object):
                     continue
                 batch, labels = zip(*tuple_data)
                 batch = [[x] + [idx] for x in batch]
+            elif 'KnowledgeEmbed' == method:
+                _data = [(idx, y) for y in sent]
+
             else:
                 window_sequences = [sent[max((ix-window_size),0):(ix+window_size+1)] for ix, x in enumerate(sent)]
                 # Denote which element of each window is the center word of interest
@@ -262,8 +277,8 @@ class textGraph(object):
 
             #add doc index
                 batch = [[x] + [idx] for x in batch]
-            inputs += batch
-            outputs += labels
+            inputs += _data
+            #outputs += labels
         #print(outputs[-1])
         print("Training data stats: records {}, kb pairs {}".format(len(inputs), len(self.tuple_data)))
         if method == 'knowledge2vec':
@@ -274,11 +289,11 @@ class textGraph(object):
             for tup in self.tuple_data:
                 inputs.append([tup[0], tup[2] + len(self.data)])
                 outputs.append(tup[1])
-
-        batch_data = np.array(inputs)
-        label_data = np.transpose(np.array([outputs]))
-        print("Training data stats: records {}, kb pairs {}".format(batch_data.shape[0], len(self.tuple_data)))
-        return batch_data, label_data, self.num_docs, self.num_words
+        np_data = [np.array(inputs), np.array(self.tuple_data)]
+        #batch_data = np.array(inputs)
+        #label_data = np.transpose(np.array([outputs]))
+        #print("Training data stats: records {}, kb pairs {}".format(batch_data.shape[0], len(self.tuple_data)))
+        return np_data, self.num_docs, self.num_words, self.num_labels
 
     def buildTrain_(self, num_sampled = 5):
         inputs, outputs = [], []
@@ -444,24 +459,27 @@ class Concept:
     def __init__(self, hierarchy):
         self.hierarchy = hierarchy
         self.links = defaultdict(list)
-        self.nodes = []
+        self.labels = []
         self.count = defaultdict(int)
         #self.inter_count = defaultdict(int)
         #print(self.hierarchy.p2c['type of sport'])
-        
+    
+    # constrain seed words    
     def dfs(self, node, height):
         for v in self.hierarchy.p2c[node][height]:
+            if v[1] > 0 and len(self.hierarchy.p2c[v][height-1]) < 50:
+                #print("Filtered: {}".format(v))
+                continue
             #print('{}{}'.format('\t'*(self.height - height), v[0].encode('ascii','ignore')))
-            self.nodes.add(self.normalize(v[0]))
-
             if v[1] > 0:
+                self.labels.add(self.normalize(v[0]))
                 self.dfs(v, height - 1)
                 #self.links[v[0]].append([node[0], relations[depth]])
             self.links[self.normalize(v[0])].append(self.normalize(node[0]))
 
     def construct_concepts(self, _concept):
         self.height = _concept[1]
-        self.nodes = set([_concept[0][0]])
+        self.labels = set([self.normalize(_concept[0][0])])
         self.root = _concept[0]
         self.dfs(self.root, self.height - 1)
 
@@ -487,7 +505,7 @@ class Concept:
         #return phrase.lower().replace(' ', '_')
         return phrase.lower().replace(' ', '_')
 
-    def link_corpus(self, phrases):
+    def link_corpus(self, phrases, idx):
         #print(self.links)
         '''
         phrase_set = set(phrases)
@@ -505,7 +523,7 @@ class Concept:
         phrase_set = set(phrases)
         for p in phrase_set:
             if p in self.links:
-                linked_nodes.extend(map(lambda x:[p, x], self.links[p]))
+                linked_nodes.extend(map(lambda x:[x, p, idx], self.links[p]))
         #print(self.links[p])
         #print(list(map(lambda x:[self.normalize(p), self.normalize(x[0]), x[1]], self.links[p])))
         #linked_nodes.extend(map(lambda x:[self.normalize(p), self.normalize(p) if x[0] == self.root[0] else self.normalize(x[0]), x[1]], self.links[p]))

@@ -352,7 +352,7 @@ class KnowledgeFineTune(nn.Module):
         return self.doc_embed.weight.data.cpu().numpy()
 
 class KnowledgeEmbed(nn.Module):
-    def __init__(self, num_words, num_docs, num_labels, embed_size):
+    def __init__(self, num_words, num_docs, num_labels, embed_size, knowledge=False):
         """
         :param num_classes: An int. The number of possible classes.
         :param embed_size: An int. EmbeddingLockup size
@@ -375,31 +375,31 @@ class KnowledgeEmbed(nn.Module):
         self.doc_embed = nn.Embedding(self.num_docs, self.embed_size, sparse=True)
         self.doc_embed.weight = Parameter(t.FloatTensor(self.num_docs, self.embed_size).uniform_(-1, 1))
 
-        self.label_embed = nn.Embedding(self.num_docs, self.embed_size, sparse=True)
-        self.label_embed.weight = Parameter(t.FloatTensor(self.num_docs, self.embed_size).uniform_(-1, 1))
+        self.label_embed = nn.Embedding(self.num_labels, self.embed_size, sparse=True)
+        self.label_embed.weight = Parameter(t.FloatTensor(self.num_labels, self.embed_size).uniform_(-1, 1))
 
         self.nce_loss = L.NCE_SIGMOID()
         self.hinge_loss = L.NCE_HINGE()
 
-    def forward(self, dt, tl, ll, num_sampled, opt):
-        if use_cuda:
-            word_ids = input_labels.cuda()
-            doc_id = input_doc.cuda()
-            label_id = out_labels.cuda()
+    def _forward(self, input_labels, u, v, num_sampled, opt = 0):
+        batch_size = input_labels.shape[0]
+        input_ids = input_labels[:, 0].cuda()
+        output_ids = input_labels[:, 1].unsqueeze(1)
+        #print(u.num_embeddings, v.num_embeddings)
+        noise = Variable(t.Tensor(batch_size, num_sampled).
+                             uniform_(0, v.num_embeddings - 1).long())
+        output_noise_ids = t.cat((output_ids, noise), dim=1).cuda()
+        if opt == 0:
+            return self.nce_loss(t.bmm(
+                u(input_ids).unsqueeze(1),
+                v(output_noise_ids).permute(0, 2, 1)).squeeze(dim=1))
 
-        w = self.word_embed(word_ids)
-        scores = self.attn(w, self.doc_embed(doc_id))
-        weights = F.softmax(scores)
-        output_doc = weights.unsqueeze(1).bmm(x).squeeze(1)
+    def forward(self, batch_data, num_sampled):
+        dt, lt = batch_data
+        loss_a = self._forward(dt, self.doc_embed, self.word_embed, num_sampled)
+        loss_b = self._forward(lt, self.label_embed, self.word_embed, num_sampled)
         
-        noise = Variable(t.Tensor(num_sampled).uniform_(0, self.num_docs - 1).long())
-        x = t.cat((output_doc, self.doc_embed(noise)))
-
-        scores = t.mm(x, self.label_embed(label_id).transpose())
-        
-        loss = F.relu(scores[1:] - scores[0] + 1)
-
-        return 
+        return loss_a + loss_b
 
     def input_embeddings(self):
         return self.word_embed.weight.data.cpu().numpy()

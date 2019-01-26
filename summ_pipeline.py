@@ -15,11 +15,14 @@ relation_cat, reversed_hier, relation_list1 = generate_relations()
 #relation_list1= ['P85', 'P86', 'P87', 'P162', 'P175', 'P264', 'P358', 'P406', 'P412', 'P434', 'P658', 'P676', 'P870', 'P942', 'P1191', 'P1303']
 relation_list1 = ['P641']
 relation_list2 = ['P31']#, 'P279', 'P361']
-config = {'batch_size': 128, 'epoch_number': 101, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':0,
-		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'knowledgeEmbed', 'id':3,
-		'preprocess': True, 'relation_list1':relation_list1, 'relation_list2': relation_list2,
+config = {'batch_size': 128, 'epoch_number': 101, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':3,
+		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':1,
+		'preprocess': False, 'relation_list1':relation_list1, 'relation_list2': relation_list2,
 		  'doc_emb_path': 'intermediate_data/pretrain_doc.emb', 'label_emb_path': 'intermediate_data/pretrain_label.emb',
 		  'stage': 'train', 'summ_method': 'caseOLAP'}
+
+#id:0 all information
+#id:1 simple label
 
 #P54 team P31 instance of P27 nationality P641 sports P413 position
 #P106 occupation P1344 participant P17 country P69 educate P279 subclass of P463 member of P641 sport
@@ -52,58 +55,56 @@ if __name__ == '__main__':
 			print("Loading Hierarchies")
 			text_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.txt'.format(config['dataset'])
 			json_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.json'.format(config['dataset'])
-			if len(config['relation_list2']) > 0:
-				h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
-				#h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
-				concepts = []
-				concept_configs = [[(u'Science', 2), 2]]
-				for con_config in concept_configs:
-					concept = Concept(h)
-					concept.construct_concepts(con_config)
-					concepts.append(concept)
-					# concept.output_concepts('concepts.txt')
-				graph_builder.load_corpus(text_path, json_path, attn=False)
-				graph_builder.load_concepts(text_path, concepts)
-				print(graph_builder.tuples)
-				#sys.exit(-1)
-			# ad hoc experiments
-			else:
-				h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
-				# Example usage of creating concept from hierarchies
-				concepts = []
-				# TODO(QI): make it more distributional
-				concept_configs = [[(u'type of sport', 2), [2, 4]]]
+			#h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
+			sports = pickle.load(open("hierarchy_sports.p", 'rb'))
+			#h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
+			concepts = []
+			'''
+			concept_configs = [[(u'Science', 2), 2], [(u'Economics', 2), 2], [(u'Politics', 2), 2]]
+			for con_config in concept_configs:
 				concept = Concept(h)
-				concept.root = (u'type of sport', 2)
-				concept.links = {
-					'soccer': [['type_of_sport|soccer', 0]],
-					'basketball': [['type_of_sport|basketball', 0]],
-					'baseball': [['type_of_sport|baseball', 0]],
-					'football': [['type_of_sport|football', 0]],
-					'tennis': [['type_of_sport|tennis', 0]],
-					'golf': [['type_of_sport|golf', 0]],
-					'hockey': [['type_of_sport|hockey', 0]]
-				}
+				concept.construct_concepts(con_config)
 				concepts.append(concept)
-				graph_builder.load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.token', '/shared/data/qiz3/text_summ/data/NYT_sports.json', attn=False)
-				graph_builder.load_concepts('/shared/data/qiz3/text_summ/data/NYT_sports.token', concepts)
+			'''
+			concept = Concept(sports)
+			concept.construct_concepts([(u'type of sport', 2), 2])
+			concepts.append(concept)
+			
+			'''
+			concept = Concept(sports)
+			concept.root = (u'type of sport', 2)
+			concept.links = {
+				'soccer': ['type_of_sport|soccer'],
+				'basketball': ['type_of_sport|basketball'],
+				'baseball': ['type_of_sport|baseball'],
+				'football': ['type_of_sport|football'],
+				'tennis': ['type_of_sport|tennis'],
+				'golf': ['type_of_sport|golf'],
+				'hockey': ['type_of_sport|hockey']
+			}
+			concepts.append(concept)
+			'''
+				# concept.output_concepts('concepts.txt')
+			graph_builder.load_corpus(text_path, json_path, attn=False)
 			graph_builder.normalize_text()
+			graph_builder.load_concepts(concepts)
+			print(graph_builder.label2id)
 			graph_builder.build_dictionary()
 			graph_builder.text_to_numbers()
-
-			X, y, num_docs, num_words = graph_builder.buildTrain(method=config['method'])
-			save_point = {'X': X, 'y':y, 'num_docs':num_docs, 'num_words':num_words}
+			X, num_docs, num_words, num_labels = graph_builder.buildTrain(method=config['method'])			
+			save_point = {'X': X, 'num_labels':num_labels, 'num_docs':num_docs, 'num_words':num_words}
 			graph_builder.dump_mapping("{}_mapping.txt".format(config['dataset']))
+			graph_builder.dump_label("{}_label.p".format(config['dataset']))
 			pickle.dump(save_point, open("{}_{}.p".format(config['method'], config['dataset']), 'wb'))
 		else:
 			save_point = pickle.load(open("{}_{}.p".format(config['method'], config['dataset']), 'rb'))
 			X = save_point['X']
-			y = save_point['y']
 			num_docs = save_point['num_docs']
 			num_words = save_point['num_words']
+			num_labels = save_point['num_labels']
 		
 		print("Training Embedding")
-		embedder.Train(config, X, y, num_words, num_docs)
+		embedder.Train(config, X, [num_words, num_docs, num_labels])
 	elif config['stage'] == 'test':
 	# Find concentrated concepts and specific common sense node
 		print("Loading Embedding")

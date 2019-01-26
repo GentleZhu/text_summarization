@@ -12,7 +12,7 @@ import scipy.spatial
 import numpy as np
 import math
 
-from model import KnowledgeD2V
+from model import KnowledgeD2V, KnowledgeEmbed
 
 def load_mapping(mapping_path):
     # maps phrase to id
@@ -26,15 +26,15 @@ def load_mapping(mapping_path):
 
 def load_labels(label_path):
     labels = {}
-    #candidates = {'College Football': 'football', 'Pro Football': 'football', 'Pro Basketball': 'basketball',
-    #              'Basketball': 'basketball', 'Hockey': 'hockey', 'Golf': 'golf', 'College Basketball': 'basketball',
-    #              'Tennis': 'tennis', 'Soccer': 'soccer', 'Baseball': 'baseball'}
+    candidates = {'College Football': 'american_football', 'Pro Football': 'american_football', 'Pro Basketball': 'basketball',
+                  'Basketball': 'basketball', 'Hockey': 'ice_hockey', 'Golf': 'golf', 'College Basketball': 'basketball',
+                  'Tennis': 'tennis', 'Soccer': 'association_football', 'Baseball': 'baseball'}
     #candidates = {'College Football': 'Sports|Football', 'Pro Football': 'Sports|Football', 'Pro Basketball': 'Sports|Basketball',
     #              'Basketball': 'Sports|Basketball', 'Hockey': 'Sports|Hockey', 'Golf': 'Sports|Golf', 'College Basketball': 'Sports|Basketball',
     #              'Tennis': 'Sports|Tennis', 'Soccer': 'Sports|Soccer', 'Baseball': 'Sports|Baseball'} 
-    candidates = {'College Football': 'type_of_sport|football', 'Pro Football': 'type_of_sport|football', 'Pro Basketball': 'type_of_sport|basketball',
-                  'Basketball': 'type_of_sport|basketball', 'Hockey': 'type_of_sport|hockey', 'Golf': 'type_of_sport|golf', 'College Basketball': 'type_of_sport|basketball',
-                  'Tennis': 'type_of_sport|tennis', 'Soccer': 'type_of_sport|soccer', 'Baseball': 'type_of_sport|baseball'}             
+    #candidates = {'College Football': 'type_of_sport|football', 'Pro Football': 'type_of_sport|football', 'Pro Basketball': 'type_of_sport|basketball',
+    #              'Basketball': 'type_of_sport|basketball', 'Hockey': 'type_of_sport|hockey', 'Golf': 'type_of_sport|golf', 'College Basketball': 'type_of_sport|basketball',
+    #              'Tennis': 'type_of_sport|tennis', 'Soccer': 'type_of_sport|soccer', 'Baseball': 'type_of_sport|baseball'}             
     counts = defaultdict(int)
     cnt = 0
     with open(label_path) as IN:
@@ -126,9 +126,11 @@ def load_model(config):
     save_point = pickle.load(open("{}_{}.p".format(config['method'], config['dataset']), 'rb'))
     num_docs = save_point['num_docs']
     num_words = save_point['num_words']
+    num_labels = save_point['num_labels']
 
-    model = KnowledgeD2V(num_words=num_words, num_docs=num_docs, embed_size=config['emb_size'],
-                kb_emb_size=config['kb_emb_size'], relational_bias=config['relation_list'])
+    model = KnowledgeEmbed(num_words=num_words, num_docs=num_docs, num_labels=num_labels, embed_size=config['emb_size'])
+    #model = KnowledgeEmbed(num_words=num_words, num_docs=num_docs, embed_size=config['emb_size'],
+    #            kb_emb_size=config['kb_emb_size'], relational_bias=config['relation_list'])
     if 'id' not in config:
         model_path = "{}{}_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['epoch_number'])
     else:
@@ -161,18 +163,18 @@ def load_label_emb(emb_path):
 
 if __name__ == '__main__':
     relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
-    #config = {'batch_size': 128, 'epoch_number': 40, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':0,
-    #    'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_sports', 'method':'knowledge2skip_gram', 'id':3,
-    #    'preprocess': True, 'relation_list':[]}
-    config = {'doc_emb_path': 'baselines/doc2cube/tmp/d.vec', 'dataset':'NYT_sports', 'method':'doc2cube', 
-    'label_emb_path':'baselines/doc2cube/tmp/l.vec'}
+    config = {'batch_size': 128, 'epoch_number': 25, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':0,
+        'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_sports', 'method':'KnowledgeEmbed', 'id':2,
+        'preprocess': True, 'relation_list':[]}
+    #config = {'doc_emb_path': 'baselines/doc2cube/tmp/d.vec', 'dataset':'NYT_sports', 'method':'doc2cube', 
+    #'label_emb_path':'baselines/doc2cube/tmp/l.vec'}
     
     if 'knowledge' not in config['method']:
         config['relation_list'] = []
     
     gt_labels, labels, gt_counts = load_labels('/shared/data/qiz3/text_summ/NYT_sports.json')
     print(labels, gt_counts)
-    if config['method'] != 'doc2cube':
+    if config['method'] == 'knowledge2skip_gram':
         graph_builder = textGraph()
         graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
         model = load_model(config)
@@ -182,6 +184,22 @@ if __name__ == '__main__':
         for k in labels:
             if k in graph_builder.name2id:
                 label2emb[k] = model.word_embed.weight[graph_builder.name2id[k], :].data.cpu().numpy() 
+            else:
+                print('Missing:',k)
+        
+        doc_assignment,per_doc_assignment =  cos_assign_docs(model.doc_embeddings(), label2emb, gt_labels)
+    elif config['method'] == 'KnowledgeEmbed':
+        graph_builder = textGraph()
+        graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+        graph_builder.load_label("{}_label.p".format(config['dataset']))
+        print(graph_builder.label2id)
+        model = load_model(config)
+        assert(model.doc_embeddings().shape[0] == len(gt_labels))
+        #print(model.input_embeddings().shape)
+        label2emb = dict()
+        for k in labels:
+            if k in graph_builder.label2id:
+                label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
             else:
                 print('Missing:',k)
         
