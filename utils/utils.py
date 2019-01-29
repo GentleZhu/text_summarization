@@ -12,6 +12,7 @@ from copy import deepcopy
 import pickle
 import operator
 import math
+from scipy import spatial
 from nltk.tokenize import sent_tokenize, word_tokenize
 
 class textGraph(object):
@@ -697,6 +698,56 @@ def retrieve_siblings(main_doc_assignment, doc_assignment, labels, topk = 10):
                 ranked_list.append(t[0])
         return_docs[label] = ranked_list
     return return_docs
+
+def target_hier_doc_assign(hierarchy, docs, label_embeddings, doc_embeddings, option='hard'):
+    threshold = 2
+    current_node = 'root'
+    while True:
+        print(current_node)
+        if not current_node in hierarchy:
+            break
+        children = hierarchy[current_node]
+        num_c = len(children)
+        if option == 'hard':
+            freq = [0 for _ in children]
+        else:
+            freq = [1.0 for _ in children]
+        for doc in docs:
+            v_doc = doc_embeddings[doc]
+            if option == 'hard':
+                l = []
+                for idx, child in enumerate(children):
+                    v_label = label_embeddings[child]
+                    l.append((idx, max(0, 1 - spatial.distance.cosine(v_doc, v_label))))
+                (id, sim) = max(l, key=lambda t: t[1])
+                freq[id] += 1
+            else:
+                for idx, child in enumerate(children):
+                    v_label = label_embeddings[child]
+                    sim = max(0, 1 - spatial.distance.cosine(v_doc, v_label))
+                    freq[idx] *= sim
+        freq = [t / sum(freq) for t in freq]
+        if num_c == 1:
+            entropy = -1
+        else:
+            entropy = - 1.0 / math.log(num_c) * sum([t * math.log(t + 0.0001) for t in freq])
+        print(freq)
+        print(entropy)
+        if entropy > threshold:
+            break
+        current_node = children[np.argmax(freq)]
+    return current_node
+
+def simple_hierarchy():
+    hierarchy = {}
+    hierarchy['root'] = ['type_of_sport']#'['science', 'type_of_sport', 'politics', 'economics']
+    hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry', 'maths']
+    hierarchy['type_of_sport'] = ['swimming', 'figure_skating', 'cycle_sport', 'ice_hockey', 'auto_racing',
+                                  'chess', 'american_football', 'cricket', 'athletics', 'alpine_skiing',
+                                  'basketball', 'tennis', 'association_football', 'golf', 'baseball']
+    hierarchy['politics'] = ['elections', 'political_other']
+    hierarchy['economics'] = ['coporations', 'economics_other']
+    return hierarchy
 
 def target_doc_assign(concepts, docs, label_embeddings, doc_embeddings):
     top_labels = list(map(lambda x:x.root[0], concepts))

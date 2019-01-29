@@ -17,7 +17,7 @@ relation_cat, reversed_hier, relation_list1 = generate_relations()
 relation_list1 = ['P641']
 relation_list2 = ['P31']#, 'P279', 'P361']
 config = {'batch_size': 128, 'epoch_number': 0, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
-		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':'jan28',
+		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':'jan29',
 		'preprocess': True, 'relation_list1':relation_list1, 'relation_list2': relation_list2,
 		  'doc_emb_path': 'intermediate_data/pretrain_doc.emb', 'label_emb_path': 'intermediate_data/pretrain_label.emb',
 		  'stage': 'test', 'summ_method': 'kams'}
@@ -221,6 +221,11 @@ if __name__ == '__main__':
 			FILELIST.write("intermediate_data/{}_{}_set{}.txt\n".format(config['summ_method'], config['dataset'], idx))
 
 			#TODO: @jingjing, rewrite target_doc_assign in utils, you can have label2emb.keys instead call concepts
+			doc_embeddings = model.doc_embeddings()
+			hierarchy = simple_hierarchy()
+			label = target_hier_doc_assign(hierarchy, docs, label2emb, doc_embeddings, option='hard')
+			embed()
+			exit()
 			main_label, target_label, sibling_labels = target_doc_assign(concepts, docs, label_emb, doc_emb)
 			# main_set = set(map(lambda x:x[0], main_doc_assignment[main_label]))
 			main_set = set(main_doc_assignment)
