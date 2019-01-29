@@ -107,7 +107,7 @@ def calculate_compression(abstract, content):
 def collect_set_fragment(records, passage_ids):
     fragments = []
     for idx in passage_ids:
-        #print(idx, records[idx]['abstract'],records[idx]['lead_3'])
+        print(idx, records[idx]['abstract'],records[idx]['lead_3'])
         f = collect_extractive_fragments(word_tokenize(records[idx]['abstract']), word_tokenize(records[idx]['content']))
         #print(f)
         fragments.extend(f)
@@ -257,6 +257,7 @@ if __name__ == '__main__':
         corpus = load_corpus('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
         #corpus = load_corpus('/shared/data/qiz3/text_summ/text_summarization/preprocess/AutoPhrase/models/NYT/segmentation.txt')
         ranked_list = []
+        embed()
         ps, aps, dcgs = [], [], []
         with open(sys.argv[2]) as FILE:
             file_list = FILE.readlines()

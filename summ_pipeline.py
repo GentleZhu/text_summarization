@@ -2,12 +2,13 @@ import sys
 from utils.WikidataLinker_mg import WikidataLinker
 from tqdm import tqdm
 from utils.utils import *
-import pickle
+import pickle, torch
 from phraseExtractor import phraseExtractor
 sys.path.append('./models/')
 import embedder
 from summarizer import collect_statistics, build_in_domain_dict, generate_caseOLAP_scores, build_co_occurrence_matrix
-from summarizer import textrank, ensembleSumm, seedRanker
+from summarizer import textrank, ensembleSumm, seedRanker, GCNRanker
+from models.model import KnowledgeEmbed
 
 #relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
 # relation_list1: hop=1, relation_list2: hop>1
@@ -15,11 +16,14 @@ relation_cat, reversed_hier, relation_list1 = generate_relations()
 #relation_list1= ['P85', 'P86', 'P87', 'P162', 'P175', 'P264', 'P358', 'P406', 'P412', 'P434', 'P658', 'P676', 'P870', 'P942', 'P1191', 'P1303']
 relation_list1 = ['P641']
 relation_list2 = ['P31']#, 'P279', 'P361']
-config = {'batch_size': 128, 'epoch_number': 101, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':3,
-		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':1,
-		'preprocess': False, 'relation_list1':relation_list1, 'relation_list2': relation_list2,
+config = {'batch_size': 128, 'epoch_number': 0, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
+		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':'jan28',
+		'preprocess': True, 'relation_list1':relation_list1, 'relation_list2': relation_list2,
 		  'doc_emb_path': 'intermediate_data/pretrain_doc.emb', 'label_emb_path': 'intermediate_data/pretrain_label.emb',
-		  'stage': 'train', 'summ_method': 'caseOLAP'}
+		  'stage': 'test', 'summ_method': 'kams'}
+
+#config['method'] = 'knowledge2skip_gram'
+#config['dataset'] = 'NYT_sports'
 
 #id:0 all information
 #id:1 simple label
@@ -45,6 +49,48 @@ def load_gt_labels(label_path):
     #print(labels)
     return target_domain
 
+def soft_assign_docs(doc_embeddings, label_embeddings):
+    # Use cosine similarity to assign docs to labels
+    # doc_embeddings: 2-d numpy array
+    # label_embeddings: dict. {'football': vec, ...}
+    doc_assignment = []
+    top_label_assignment = defaultdict(list)
+    for idx in range(doc_embeddings.shape[0]):
+        vec = doc_embeddings[idx]
+        local_list = []
+        for label in label_embeddings:
+            label_vec = label_embeddings[label]
+            local_list.append((label, np.dot(vec, label_vec)))
+            #local_list.append((label, scipy.spatial.distance.cosine(vec, label_vec)))
+        m = sorted(local_list, key=lambda t:t[1], reverse=True)[:3]
+        doc_assignment.append(m)
+        top_label_assignment[m[0][0]].append([idx, m[0][1]])
+    for key in top_label_assignment:
+    	top_label_assignment[key].sort(key=lambda x:x[1], reverse=True)
+        #if idx > 10:
+        #    break
+        #print(local_list)
+    return doc_assignment, top_label_assignment
+
+def load_model(config):
+
+    save_point = pickle.load(open("{}_{}.p".format(config['method'], config['dataset']), 'rb'))
+    num_docs = save_point['num_docs']
+    num_words = save_point['num_words']
+    num_labels = save_point['num_labels']
+
+    model = KnowledgeEmbed(num_words=num_words, num_docs=num_docs, num_labels=num_labels, embed_size=config['emb_size'])
+    #model = KnowledgeEmbed(num_words=num_words, num_docs=num_docs, embed_size=config['emb_size'],
+    #            kb_emb_size=config['kb_emb_size'], relational_bias=config['relation_list'])
+    if 'id' not in config:
+        model_path = "{}{}_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['epoch_number'])
+    else:
+        model_path = "{}{}_{}_id_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['id'], config['epoch_number'])
+    tmp = torch.load(model_path, map_location=lambda storage, loc: storage)
+    model.load_state_dict(tmp, False)
+    model.cuda()
+    return model
+
 if __name__ == '__main__':
 	#Interface of training various embeddings
 	if config['stage'] == 'train':
@@ -55,17 +101,18 @@ if __name__ == '__main__':
 			print("Loading Hierarchies")
 			text_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.txt'.format(config['dataset'])
 			json_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.json'.format(config['dataset'])
-			#h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
+			h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
 			sports = pickle.load(open("hierarchy_sports.p", 'rb'))
 			#h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
+
 			concepts = []
-			'''
+
 			concept_configs = [[(u'Science', 2), 2], [(u'Economics', 2), 2], [(u'Politics', 2), 2]]
 			for con_config in concept_configs:
 				concept = Concept(h)
 				concept.construct_concepts(con_config)
 				concepts.append(concept)
-			'''
+
 			concept = Concept(sports)
 			concept.construct_concepts([(u'type of sport', 2), 2])
 			concepts.append(concept)
@@ -105,47 +152,86 @@ if __name__ == '__main__':
 		
 		print("Training Embedding")
 		embedder.Train(config, X, [num_words, num_docs, num_labels])
+	elif config['stage'] == 'examine':
+		twin = 'astronomy'
+		siblings = {'geology': 0, 'physics': 2, 'chemistry': 3, 'biology': 4, 'maths': 5, 'astronomy': 6}.keys()
+		graph_builder = textGraph()
+		graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+		graph_builder.load_label("{}_label.p".format(config['dataset']))
+		print(graph_builder.label2id)
+		#sys.exit(-1)
+		model = load_model(config)
+		print(model.doc_embeddings().shape)
+		#print(model.input_embeddings().shape)
+		label2emb = dict()
+		for k in graph_builder.label2id:
+		    label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
+		else:
+		    print('Missing:',k)
+
+		doc_assignment,top_label_assignment = soft_assign_docs(model.doc_embeddings(), label2emb)
+		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+		docs = [x[0] for x in top_label_assignment[twin][:100]]
+		siblings_docs = []
+		for key in siblings:
+			if key != twin:
+				siblings_docs.append([x[0] for x in top_label_assignment[key][:100]])
+		phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
+		scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx)
+		embed()
 	elif config['stage'] == 'test':
 	# Find concentrated concepts and specific common sense node
 		print("Loading Embedding")
 		#Sports Test Documents
 		set_docs = [
-		[5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945],
+		[5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945], #basketball
 		[51, 256, 381, 169, 45296, 667],
 		[52, 357, 629, 936, 801, 1681, 1105, 725],
 		[77, 6218, 11847, 615, 1940, 5458, 3169, 10201, 2453, 47171],
 		[79, 1163, 2576, 15069, 2836, 11288, 3169, 1680, 14666, 5646, 11569],
 		[99, 2323, 14379, 4422, 4573, 5148, 292, 1322, 6811, 6654, 382]
 		]
-		concepts = []
-		# TODO(QI): make it more distributional
-		concept_configs = [[(u'type_of_sport', 2), [2, 4]]]
-		h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], 'NYT_sports'), 'rb'))
-		concept = Concept(h)
-		concept.root = (u'type_of_sport', 2)
-		concept.layers[0] = ['type_of_sport|soccer', 'type_of_sport|basketball', 'type_of_sport|baseball', 'type_of_sport|football','type_of_sport|tennis', 'type_of_sport|golf', 'type_of_sport|hockey']
-		concepts.append(concept)
-		doc_emb = load_doc_emb(config['doc_emb_path'])
-		label_emb = load_label_emb(config['label_emb_path'])
-		main_doc_assignment = load_gt_labels('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json')
+
+		graph_builder = textGraph(None)
+		graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+		graph_builder.load_label("{}_label.p".format(config['dataset']))
+		print(graph_builder.label2id)
+		#sys.exit(-1)
+		model = load_model(config)
+		print(model.doc_embeddings().shape)
+		#print(model.input_embeddings().shape)
+		label2emb = dict()
+		for k in graph_builder.label2id:
+		    label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
+		else:
+		    print('Missing:',k)
+
+
+		model = load_model(config)
+		#doc_emb = load_doc_emb(config['doc_emb_path'])
+		#label_emb = load_label_emb(config['label_emb_path'])
+		#main_doc_assignment = load_gt_labels('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json')
 		# main_doc_assignment = background_doc_assign(doc_emb, label_emb, [''])
-		doc_assignment = background_doc_assign(doc_emb, label_emb, concept.layers[0])
+		doc_assignment = background_doc_assign(model.doc_embeddings(), label2emb)
 		FILELIST = open("intermediate_data/{}_{}_filelist.txt".format(config['summ_method'], config['dataset']), 'w')
+		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+		
 		for idx,docs in enumerate(set_docs):
 			OUT = open("intermediate_data/{}_{}_set{}.txt".format(config['summ_method'], config['dataset'], idx), 'w')
 			FILELIST.write("intermediate_data/{}_{}_set{}.txt\n".format(config['summ_method'], config['dataset'], idx))
+
+			#TODO: @jingjing, rewrite target_doc_assign in utils, you can have label2emb.keys instead call concepts
 			main_label, target_label, sibling_labels = target_doc_assign(concepts, docs, label_emb, doc_emb)
 			# main_set = set(map(lambda x:x[0], main_doc_assignment[main_label]))
 			main_set = set(main_doc_assignment)
 			# print(len(main_set))
-			siblings = retrieve_siblings(main_set, doc_assignment, sibling_labels, topk=1000)
+			siblings = retrieve_siblings(main_set, doc_assignment, sibling_labels, topk=100)
 			
 			twin_docs = siblings[target_label]
-			siblings_docs = [siblings[x] for x in siblings if x!=target_label]
+			siblings_docs = [siblings[x] for x in siblings if x != target_label]
 			print("Number of sibling groups: {}".format(len(siblings_docs)))
 
-			document_phrase_cnt, inverted_index = collect_statistics(
-				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+			
 
 			ranked_list = []
 
@@ -188,8 +274,21 @@ if __name__ == '__main__':
 				scores = textrank(phrase2idx.keys(), similarity_scores)
 				ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
 				ranked_list = sorted(ranked_list, key=lambda t:-t[1])
-			elif config['summ_method'] == 'our-ensemble': 
-            
+			elif config['summ_method'] == 'kams':
+				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
+				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx)
+				labels = dict()
+				for r in ranked_list[:30]:
+					labels[r[0]] = 1
+				for r in ranked_list[-30:]:
+					labels[r[0]] = 0
+				similarity_scores = build_co_occurrence_matrix(docs, phrase2idx,
+				        '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt')
+				
+				ranked_list = GCNRanker(phrase2idx.keys(), similarity_scores, phrase2idx, idx2phrase, labels)
+				ranked_list = sorted(ranked_list, key=lambda x:x[1], reverse=True)
+
+				'''
 				ranked_lists = []
 				for doc in docs:
 					phrase2idx, idx2phrase = build_in_domain_dict([doc], document_phrase_cnt)
@@ -205,6 +304,8 @@ if __name__ == '__main__':
 				#embed()
 
 				ranked_list = ensembleSumm(ranked_lists, k=30)
+				'''
+
 				
 			OUT.write(' '.join(map(str, docs)) + '\n')
 			for r in ranked_list[:30]:
@@ -232,5 +333,6 @@ if __name__ == '__main__':
 			ranked_list = [(phrase, A[phrase2idx[phrase]]) for phrase in target_phrases]
 			ranked_list = sorted(ranked_list, key=lambda t: -t[1])
 			'''
+			break
 	elif config['stage'] == 'finetune':
 		pass

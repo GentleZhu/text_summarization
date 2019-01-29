@@ -89,6 +89,27 @@ def cos_assign_docs(doc_embeddings, label_embeddings, gt_labels=None):
         per_doc_assignment[idx] = m[0]
     return doc_assignment, per_doc_assignment
 
+def soft_assign_docs(doc_embeddings, label_embeddings):
+    # Use cosine similarity to assign docs to labels
+    # doc_embeddings: 2-d numpy array
+    # label_embeddings: dict. {'football': vec, ...}
+    doc_assignment = []
+    top_label_assignment = defaultdict(list)
+    for idx in range(doc_embeddings.shape[0]):
+        vec = doc_embeddings[idx]
+        local_list = []
+        for label in label_embeddings:
+            label_vec = label_embeddings[label]
+            local_list.append((label, np.dot(vec, label_vec)))
+            #local_list.append((label, scipy.spatial.distance.cosine(vec, label_vec)))
+        m = sorted(local_list, key=lambda t:t[1], reverse=True)[:3]
+        doc_assignment.append(m)
+        top_label_assignment[m[0][0]].append([idx, m[0][1]])
+        #if idx > 10:
+        #    break
+        #print(local_list)
+    return doc_assignment, top_label_assignment
+
 def evaluate_assignment(doc_assignment, gt_labels, k=100):
     # Evaluate top-k precision
     # doc_assignment: dict, {'football':[0,1,3...], ...}
@@ -135,7 +156,7 @@ def load_model(config):
         model_path = "{}{}_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['epoch_number'])
     else:
         model_path = "{}{}_{}_id_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['id'], config['epoch_number'])
-    tmp = torch.load(model_path)
+    tmp = torch.load(model_path, map_location=lambda storage, loc: storage)
     model.load_state_dict(tmp, False)
     model.cuda()
     return model
@@ -163,54 +184,77 @@ def load_label_emb(emb_path):
 
 if __name__ == '__main__':
     relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
-    config = {'batch_size': 128, 'epoch_number': 25, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':0,
-        'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_sports', 'method':'KnowledgeEmbed', 'id':2,
-        'preprocess': True, 'relation_list':[]}
+    config = {'batch_size': 128, 'epoch_number': 0, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
+        'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':'jan28',
+        'eval': False, 'relation_list':[]}
     #config = {'doc_emb_path': 'baselines/doc2cube/tmp/d.vec', 'dataset':'NYT_sports', 'method':'doc2cube', 
     #'label_emb_path':'baselines/doc2cube/tmp/l.vec'}
-    
+
     if 'knowledge' not in config['method']:
         config['relation_list'] = []
-    
-    gt_labels, labels, gt_counts = load_labels('/shared/data/qiz3/text_summ/NYT_sports.json')
-    print(labels, gt_counts)
-    if config['method'] == 'knowledge2skip_gram':
-        graph_builder = textGraph()
-        graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
-        model = load_model(config)
-        assert(model.doc_embeddings().shape[0] == len(gt_labels))
-        print(model.input_embeddings().shape)
-        label2emb = dict()
-        for k in labels:
-            if k in graph_builder.name2id:
-                label2emb[k] = model.word_embed.weight[graph_builder.name2id[k], :].data.cpu().numpy() 
-            else:
-                print('Missing:',k)
-        
-        doc_assignment,per_doc_assignment =  cos_assign_docs(model.doc_embeddings(), label2emb, gt_labels)
-    elif config['method'] == 'KnowledgeEmbed':
-        graph_builder = textGraph()
-        graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
-        graph_builder.load_label("{}_label.p".format(config['dataset']))
-        print(graph_builder.label2id)
-        model = load_model(config)
-        assert(model.doc_embeddings().shape[0] == len(gt_labels))
-        #print(model.input_embeddings().shape)
-        label2emb = dict()
-        for k in labels:
-            if k in graph_builder.label2id:
+
+    #gt_labels, labels, gt_counts = load_labels('/shared/data/qiz3/text_summ/NYT_sports.json')
+    gt_labels, labels, gt_counts = load_labels('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json')
+
+    if config['eval']:
+        print(labels, gt_counts)
+        torch.cuda.set_device(int(config['gpu']))
+        if config['method'] == 'knowledge2skip_gram':
+            graph_builder = textGraph()
+            graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+            model = load_model(config)
+            assert(model.doc_embeddings().shape[0] == len(gt_labels))
+            print(model.input_embeddings().shape)
+            label2emb = dict()
+            for k in labels:
+                if k in graph_builder.name2id:
+                    label2emb[k] = model.word_embed.weight[graph_builder.name2id[k], :].data.cpu().numpy() 
+                else:
+                    print('Missing:',k)
+            
+            doc_assignment,per_doc_assignment =  cos_assign_docs(model.doc_embeddings(), label2emb, gt_labels)
+        elif config['method'] == 'KnowledgeEmbed':
+            graph_builder = textGraph()
+            graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+            graph_builder.load_label("{}_label.p".format(config['dataset']))
+            print(graph_builder.label2id)
+            model = load_model(config)
+            assert(model.doc_embeddings().shape[0] == len(gt_labels))
+            #print(model.input_embeddings().shape)
+            label2emb = dict()
+            for k in labels:
+                if k in graph_builder.label2id:
+                    label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
+                else:
+                    print('Missing:',k)
+            
+            doc_assignment,per_doc_assignment =  cos_assign_docs(model.doc_embeddings(), label2emb, gt_labels)
+        else:
+            doc_embeddings = load_emb(config['doc_emb_path'])
+            #print(doc_embeddings.shape)
+            #print(len(gt_labels))
+            assert(doc_embeddings.shape[0] == len(gt_labels))
+            label2emb = load_label_emb(config['label_emb_path'])
+            doc_assignment,per_doc_assignment =  cos_assign_docs(doc_embeddings, label2emb, gt_labels)
+        prec = evaluate_assignment(doc_assignment, gt_labels)
+        evaluate_assignment_all(per_doc_assignment, gt_labels, gt_counts)
+        print(prec)
+    else:
+        if config['method'] == 'KnowledgeEmbed':
+            graph_builder = textGraph()
+            graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+            graph_builder.load_label("{}_label.p".format(config['dataset']))
+            print(graph_builder.label2id)
+            #sys.exit(-1)
+            model = load_model(config)
+            print(model.doc_embeddings().shape, len(gt_labels))
+            assert(model.doc_embeddings().shape[0] == len(gt_labels))
+            #print(model.input_embeddings().shape)
+            label2emb = dict()
+            for k in graph_builder.label2id:
                 label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
             else:
                 print('Missing:',k)
-        
-        doc_assignment,per_doc_assignment =  cos_assign_docs(model.doc_embeddings(), label2emb, gt_labels)
-    else:
-        doc_embeddings = load_emb(config['doc_emb_path'])
-        #print(doc_embeddings.shape)
-        #print(len(gt_labels))
-        assert(doc_embeddings.shape[0] == len(gt_labels))
-        label2emb = load_label_emb(config['label_emb_path'])
-        doc_assignment,per_doc_assignment =  cos_assign_docs(doc_embeddings, label2emb, gt_labels)
-    prec = evaluate_assignment(doc_assignment, gt_labels)
-    evaluate_assignment_all(per_doc_assignment, gt_labels, gt_counts)
-    print(prec)
+            
+            doc_assignment,top_label_assignment = soft_assign_docs(model.doc_embeddings(), label2emb)
+            embed()

@@ -188,8 +188,17 @@ class textGraph(object):
             for concept in concepts:
                 #concept.link_corpus(tokens)
             #break
-                self.tuples.extend(concept.link_corpus(line, idx))
+                concept._link_corpus(line)
+                #self.tuples.extend(concept.link_corpus(line, idx))
             #break
+        print("pre-linking done")
+        for concept in concepts:
+            concept.count_seeds()
+
+        for idx,line in enumerate(tqdm(self.texts)):
+            for concept in concepts:
+                self.tuples.extend(concept.link_corpus(line))
+        print("entity-linking done")
 
         #for concept in concepts:
         #    print(concept.output_concepts())
@@ -459,8 +468,10 @@ class Concept:
     def __init__(self, hierarchy):
         self.hierarchy = hierarchy
         self.links = defaultdict(list)
+        self.clean_links = defaultdict(list)
         self.labels = []
         self.count = defaultdict(int)
+        self.seeds = defaultdict(list)
         #self.inter_count = defaultdict(int)
         #print(self.hierarchy.p2c['type of sport'])
     
@@ -505,7 +516,16 @@ class Concept:
         #return phrase.lower().replace(' ', '_')
         return phrase.lower().replace(' ', '_')
 
-    def link_corpus(self, phrases, idx):
+    def count_seeds(self):
+        for k in self.seeds:
+            candidates = []
+            for p in set(self.seeds[k]):
+                candidates.append([p, self.count[p]])
+            candidates.sort(key=lambda x:x[1], reverse=True)
+            for kw in candidates[:50]:
+                self.clean_links[kw[0]] = self.links[kw[0]]
+
+    def link_corpus(self, phrases):
         #print(self.links)
         '''
         phrase_set = set(phrases)
@@ -522,12 +542,35 @@ class Concept:
         linked_nodes = []
         phrase_set = set(phrases)
         for p in phrase_set:
+            if p in self.clean_links:
+                linked_nodes.append([self.clean_links[p][0], p])
+        return linked_nodes
+
+    def _link_corpus(self, phrases):
+        #print(self.links)
+        '''
+        phrase_set = set(phrases)
+        for p in phrase_set:
+            if p in self.nodes:
+                self.count[p] += phrases.count(p)
+                if p in self.links:
+                    for l in self.links[p]:
+                        #must occur together
+                        if l in phrase_set:
+                            self.count[(p,l)] += phrases.count(p)
+                            self.count[(l,p)] += phrases.count(l)
+        ''' 
+        phrase_set = set(phrases)
+        for p in phrase_set:
             if p in self.links:
-                linked_nodes.extend(map(lambda x:[x, p, idx], self.links[p]))
+                if len(self.links[p]) == 1:
+                    self.count[p] += 1
+                    self.seeds[self.links[p][0]].append(p)
+
+                #linked_nodes.extend(map(lambda x:[x, p, idx], self.links[p]))
         #print(self.links[p])
         #print(list(map(lambda x:[self.normalize(p), self.normalize(x[0]), x[1]], self.links[p])))
         #linked_nodes.extend(map(lambda x:[self.normalize(p), self.normalize(p) if x[0] == self.root[0] else self.normalize(x[0]), x[1]], self.links[p]))
-        return linked_nodes
 
 def rank_hierarchies(hierarchy, option='A'):
     ranked_list = []
@@ -622,21 +665,26 @@ def load_label_emb(emb_path):
             output[tmp[0]] = np.asarray(list(map(float, tmp[1:])))
         return output
 
-def background_doc_assign(doc_embeddings, label_embeddings, labels):
-    doc_assignment = defaultdict(list)
+def background_doc_assign(doc_embeddings, label_embeddings):
+    # Use cosine similarity to assign docs to labels
+    # doc_embeddings: 2-d numpy array
+    # label_embeddings: dict. {'football': vec, ...}
+    top_label_assignment = defaultdict(list)
     for idx in range(doc_embeddings.shape[0]):
         vec = doc_embeddings[idx]
         local_list = []
-        for label in labels:
+        for label in label_embeddings:
             label_vec = label_embeddings[label]
             local_list.append((label, np.dot(vec, label_vec)))
             #local_list.append((label, scipy.spatial.distance.cosine(vec, label_vec)))
-        m = max(local_list, key=lambda t:t[1])
+        m = sorted(local_list, key=lambda t:t[1], reverse=True)[:3]
+        top_label_assignment[m[0][0]].append([idx, m[0][1]])
+    for key in top_label_assignment:
+        top_label_assignment[key].sort(key=lambda x:x[1], reverse=True)
         #if idx > 10:
         #    break
         #print(local_list)
-        doc_assignment[m[0]].append((idx, m[1]))
-    return doc_assignment
+    return top_label_assignment
 
 def retrieve_siblings(main_doc_assignment, doc_assignment, labels, topk = 10):
     return_docs = {}
@@ -654,7 +702,8 @@ def target_doc_assign(concepts, docs, label_embeddings, doc_embeddings):
     top_labels = list(map(lambda x:x.root[0], concepts))
     candidate_labels = defaultdict(int)
     target_label = None
-    top_labels += ['science', 'business', 'arts', 'politics']
+    print(top_labels)
+    #top_labels += ['science', 'business', 'arts', 'politics']
     for doc in docs:
         local_list = []
         vec = doc_embeddings[doc]
@@ -667,7 +716,9 @@ def target_doc_assign(concepts, docs, label_embeddings, doc_embeddings):
     main_label = sorted(candidate_labels.items(), key=lambda x:x[1], reverse=True)[0][0]
     print("Fall into Concept:{}".format(main_label))
 
-    sub_labels = concepts[top_labels.index(main_label)].layers 
+    # currently support one-level growth
+    sub_labels = [concepts[top_labels.index(main_label)].labels]
+    #print(sub_labels)
     candidate_labels = defaultdict(int)
     for depth in range(len(sub_labels)):
         for doc in docs:

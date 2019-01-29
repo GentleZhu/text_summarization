@@ -99,7 +99,8 @@ def Train(config, X, params):
 		t.cuda.set_device(int(config['gpu']))
 		model = KnowledgeEmbed(num_words=num_words, num_docs=num_docs, num_labels=num_labels, embed_size=config['emb_size'])
 
-		optimizer = SGD(params=model.parameters(), lr=0.1)
+		#optimizer = SparseAdam(params=model.parameters(), lr=0.0001)
+		optimizer = SparseAdam(params=model.parameters(), lr=0.0005)
 
 		model.cuda()
 
@@ -113,7 +114,7 @@ def Train(config, X, params):
 				loss.backward()
 				optimizer.step()
 
-			if epoch % 5 == 0:
+			if epoch % 3 == 0:
 				model_path = "{}{}_{}_id_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['id'], epoch)
 				t.save(model.state_dict(), model_path)
 			print("Epoch:{}, Loss:{}".format(epoch, epoch_loss))

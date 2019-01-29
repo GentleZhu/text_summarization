@@ -4,7 +4,7 @@ from torch.autograd import Variable
 from torch.nn import Parameter
 import torch.nn.functional as F
 import loss as L
-from layers import DistMult
+from layers import DistMult, GraphConvolution
 
 class KnowledgeD2V(nn.Module):
     def __init__(self, num_words, num_docs, embed_size, kb_emb_size, weights=None, relational_bias=None):
@@ -370,25 +370,32 @@ class KnowledgeEmbed(nn.Module):
         self.embed_size = embed_size
 
         self.word_embed = nn.Embedding(self.num_words, self.embed_size, sparse=True)
-        self.word_embed.weight = Parameter(t.FloatTensor(self.num_words, self.embed_size).uniform_(-1, 1))
+        self.word_embed.weight = Parameter(t.FloatTensor(self.num_words, self.embed_size).uniform_(-0.1, 0.1))
 
         self.doc_embed = nn.Embedding(self.num_docs, self.embed_size, sparse=True)
-        self.doc_embed.weight = Parameter(t.FloatTensor(self.num_docs, self.embed_size).uniform_(-1, 1))
+        self.doc_embed.weight = Parameter(t.FloatTensor(self.num_docs, self.embed_size).uniform_(-0.1, 0.1))
 
         self.label_embed = nn.Embedding(self.num_labels, self.embed_size, sparse=True)
-        self.label_embed.weight = Parameter(t.FloatTensor(self.num_labels, self.embed_size).uniform_(-1, 1))
+        self.label_embed.weight = Parameter(t.FloatTensor(self.num_labels, self.embed_size).uniform_(-0.1, 0.1))
 
         self.nce_loss = L.NCE_SIGMOID()
         self.hinge_loss = L.NCE_HINGE()
 
     def _forward(self, input_labels, u, v, num_sampled, opt = 0):
+
+        use_cuda = self.word_embed.weight.is_cuda
         batch_size = input_labels.shape[0]
-        input_ids = input_labels[:, 0].cuda()
+        input_ids = input_labels[:, 0]
         output_ids = input_labels[:, 1].unsqueeze(1)
         #print(u.num_embeddings, v.num_embeddings)
         noise = Variable(t.Tensor(batch_size, num_sampled).
                              uniform_(0, v.num_embeddings - 1).long())
-        output_noise_ids = t.cat((output_ids, noise), dim=1).cuda()
+        output_noise_ids = t.cat((output_ids, noise), dim=1)
+
+        if use_cuda:
+            input_ids = input_ids.cuda()
+            output_noise_ids = output_noise_ids.cuda()
+
         if opt == 0:
             return self.nce_loss(t.bmm(
                 u(input_ids).unsqueeze(1),
@@ -406,3 +413,17 @@ class KnowledgeEmbed(nn.Module):
 
     def doc_embeddings(self):
         return self.doc_embed.weight.data.cpu().numpy()
+
+class GCN(nn.Module):
+    def __init__(self, nfeat, nhid, nclass, dropout):
+        super(GCN, self).__init__()
+
+        self.gc1 = GraphConvolution(nfeat, nhid)
+        self.gc2 = GraphConvolution(nhid, nclass)
+        self.dropout = dropout
+
+    def forward(self, x, adj):
+        x = F.relu(self.gc1(x, adj))
+        x = F.dropout(x, self.dropout, training=self.training)
+        x = self.gc2(x, adj)
+        return F.log_softmax(x, dim=1)

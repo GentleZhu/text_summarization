@@ -5,6 +5,9 @@ from tqdm import tqdm
 import random
 from gensim.models import Word2Vec
 from gensim.models.doc2vec import Doc2Vec, TaggedDocument
+from model import GCN
+import torch
+import torch.nn.functional as F
 sys.path.append('../')
 
 from collections import defaultdict
@@ -15,7 +18,59 @@ import re
 import math
 from numpy.linalg import matrix_power
 
+
 from phraseExtractor import phraseExtractor
+
+def GCNRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels, hidden = 16):
+    normalized_sim = np.zeros(similarity_scores.shape, dtype=np.float32)
+    #print("NEW")
+    for i in range(similarity_scores.shape[0]):
+        similarity_scores[i, i] = 0.0
+        sum_ = np.sum(similarity_scores[:, i])
+        if sum_ == 0:
+            continue
+        for j in range(similarity_scores.shape[0]):
+            normalized_sim[j, i] = similarity_scores[j, i] / sum_
+    # Load data
+    input_labels = np.zeros([similarity_scores.shape[0]])
+    idx_train = []
+    for p in labels:
+        if labels[p] == 1:
+            input_labels[phrase2idx[p]] = 1
+        idx_train.append(phrase2idx[p])
+
+    idx_train = torch.LongTensor(idx_train)
+    labels = torch.LongTensor(input_labels)
+    features = torch.from_numpy(np.ones([similarity_scores.shape[0], 8], dtype=np.float32))
+    adj = torch.from_numpy(normalized_sim)
+
+    # Model and optimizer
+    model = GCN(nfeat=features.shape[1],
+                nhid=hidden,
+                nclass=labels.max().item() + 1,
+                dropout=0.5)
+    optimizer = torch.optim.Adam(model.parameters(),
+                           lr=0.01)
+
+    model.train()
+    
+
+    for epoch in range(200):
+        optimizer.zero_grad()
+        output = model(features, adj)
+        loss_train = F.nll_loss(output[idx_train], labels[idx_train])
+        loss_train.backward()
+        optimizer.step()
+        if epoch % 20 == 0:
+            print("Epoch:{}, Loss:{}".format(epoch, loss_train))
+    model.eval()
+    output = model(features, adj)
+    preds = output.max(1)[1].type_as(labels)
+    top_list = []
+    for i in range(len(phrase2idx)):
+        if preds[i] == 1:
+            top_list.append([idx2phrase[i], output[i][1].data.cpu().item()])
+    return top_list
 
 def seedRanker(target_phrases, similarity_scores, phrase2idx, reweight=None, sink=[]):
     # Textrank.
