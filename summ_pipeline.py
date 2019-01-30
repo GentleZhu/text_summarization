@@ -12,6 +12,10 @@ from summarizer import textrank, ensembleSumm, seedRanker, GCNRanker
 from models.model import KnowledgeEmbed
 import configparser
 
+duc_set = ['d30048t', 'd30049t', 'd30050t', 'd30051t', 'd30053t', 'd30055t', 'd30056t', 'd30059t', 'd31001t',
+           'd31008t', 'd31009t', 'd31013t', 'd31022t', 'd31026t', 'd31031t', 'd31032t', 'd31033t', 'd31038t',
+           'd31043t', 'd31050t']
+
 #relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
 # relation_list1: hop=1, relation_list2: hop>1
 relation_cat, reversed_hier, relation_list1 = generate_relations()
@@ -174,6 +178,7 @@ if __name__ == '__main__':
 		print("Loading Embedding")
 		#Sports Test Documents
 		set_docs = [
+		list(range(167852, 167862)),
 		[5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945],  # basketball
 		[1002, 33719, 62913, 2123, 122759, 36113, 35827, 16109], #korea nuclear
 		[1848, 55838, 138468, 55669, 69069, 53809, 23665, 61064, 82084, 61629], #physics
@@ -183,6 +188,7 @@ if __name__ == '__main__':
 		[79, 1163, 2576, 15069, 2836, 11288, 3169, 1680, 14666, 5646, 11569],
 		[99, 2323, 14379, 4422, 4573, 5148, 292, 1322, 6811, 6654, 382]
 		]
+		set_docs = [list(range(167842 + 10 * i, 167852 + 10 * i)) for i in range(20)]
 
 		graph_builder = textGraph(None)
 		graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
@@ -206,8 +212,10 @@ if __name__ == '__main__':
 		# main_doc_assignment = background_doc_assign(doc_emb, label_emb, [''])
 		doc_assignment,top_label_assignment = soft_assign_docs(model.doc_embeddings(), label2emb)
 		FILELIST = open("intermediate_data/{}_{}_filelist.txt".format(config['summ_method'], config['dataset']), 'w')
-		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
-		
+		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/nyt.txt')
+
+		phrase_scores = {}
+
 		for idx,docs in enumerate(set_docs):
 			OUT = open("intermediate_data/{}_{}_set{}.txt".format(config['summ_method'], config['dataset'], idx), 'w')
 			FILELIST.write("intermediate_data/{}_{}_set{}.txt\n".format(config['summ_method'], config['dataset'], idx))
@@ -227,16 +235,15 @@ if __name__ == '__main__':
 			#print(siblings_docs, twin_docs)
 			print("Number of sibling groups: {}".format(len(siblings_docs)))
 
-			
 
 			ranked_list = []
 
 			if config['summ_method'] == 'caseOLAP':
+				siblings_docs = []
 				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
 				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
-	                                                           phrase2idx)
-				embed()
-				exit()
+	                                                           phrase2idx, option='C')
+				phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
 
 			elif config['summ_method'] == 'caseOLAP-twin': 
 
@@ -274,10 +281,13 @@ if __name__ == '__main__':
 
 				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
 				similarity_scores = build_co_occurrence_matrix(docs, phrase2idx,
-				        '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt')
+				        '/shared/data/qiz3/text_summ/src/jt_code/HiExpan/data/nyt/intermediate/segmentation1.txt')
 				scores = textrank(phrase2idx.keys(), similarity_scores)
 				ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
 				ranked_list = sorted(ranked_list, key=lambda t:-t[1])
+
+				phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
+
 			elif config['summ_method'] == 'kams':
 				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
 				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx)
@@ -310,7 +320,6 @@ if __name__ == '__main__':
 				ranked_list = ensembleSumm(ranked_lists, k=30)
 				'''
 
-				
 			OUT.write(' '.join(map(str, docs)) + '\n')
 			for r in ranked_list[:30]:
 				OUT.write("{} {}\n".format(r[0], r[1]))
@@ -338,5 +347,6 @@ if __name__ == '__main__':
 			ranked_list = sorted(ranked_list, key=lambda t: -t[1])
 			'''
 			break
+		#pickle.dump(phrase_scores, open('baselines/sentence_summ/phrase_scores.p', 'wb'))
 	elif config['stage'] == 'finetune':
 		pass

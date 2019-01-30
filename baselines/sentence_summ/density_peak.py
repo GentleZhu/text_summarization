@@ -54,7 +54,7 @@ def select_sentences(budget, scores, sentences):
     return chosen
 
 def main():
-    delta = 0.2
+    delta = 0.22
     budget = 665
     para = 0.5
     beta = 0.1
@@ -130,7 +130,12 @@ def calculate_similarity(passages):
             if j < i:
                 similarity_scores[i][j] = similarity_scores[j][i]
             else:
-                sim = len(set(passages[i]) & set(passages[j])) / (math.log(len(set(passages[j])) + 1) + math.log(len(set(passages[j])) + 1))
+                sim = 0
+                for word in passages[i]:
+                    if word in passages[j]:
+                        sim += 1
+                sim /= (math.log(len(set(passages[i])) + 1) + math.log(len(set(passages[j])) + 1))
+                #sim = len(set(passages[i]) & set(passages[j])) / (math.log(len(set(passages[i])) + 1) + math.log(len(set(passages[j])) + 1))
                 similarity_scores[i][j] = sim
     return similarity_scores
 
