@@ -666,6 +666,29 @@ def load_label_emb(emb_path):
             output[tmp[0]] = np.asarray(list(map(float, tmp[1:])))
         return output
 
+def soft_assign_docs(doc_embeddings, label_embeddings):
+    # Use cosine similarity to assign docs to labels
+    # doc_embeddings: 2-d numpy array
+    # label_embeddings: dict. {'football': vec, ...}
+    doc_assignment = []
+    top_label_assignment = defaultdict(list)
+    for idx in range(doc_embeddings.shape[0]):
+        vec = doc_embeddings[idx]
+        local_list = []
+        for label in label_embeddings:
+            label_vec = label_embeddings[label]
+            local_list.append((label, np.dot(vec, label_vec)))
+            #local_list.append((label, scipy.spatial.distance.cosine(vec, label_vec)))
+        m = sorted(local_list, key=lambda t:t[1], reverse=True)[:3]
+        doc_assignment.append(m)
+        top_label_assignment[m[0][0]].append([idx, m[0][1]])
+    for key in top_label_assignment:
+        top_label_assignment[key].sort(key=lambda x:x[1], reverse=True)
+        #if idx > 10:
+        #    break
+        #print(local_list)
+    return doc_assignment, top_label_assignment
+
 def background_doc_assign(doc_embeddings, label_embeddings):
     # Use cosine similarity to assign docs to labels
     # doc_embeddings: 2-d numpy array
@@ -736,11 +759,11 @@ def target_hier_doc_assign(hierarchy, docs, label_embeddings, doc_embeddings, op
         if entropy > threshold:
             break
         current_node = children[np.argmax(freq)]
-    return current_node
+    return current_node, children
 
 def simple_hierarchy():
     hierarchy = {}
-    hierarchy['root'] = ['type_of_sport']#'['science', 'type_of_sport', 'politics', 'economics']
+    hierarchy['root'] = ['politics']#'['science', 'type_of_sport', 'politics', 'economics']
     hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry', 'maths']
     hierarchy['type_of_sport'] = ['swimming', 'figure_skating', 'cycle_sport', 'ice_hockey', 'auto_racing',
                                   'chess', 'american_football', 'cricket', 'athletics', 'alpine_skiing',

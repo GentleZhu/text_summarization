@@ -184,9 +184,9 @@ def load_label_emb(emb_path):
 
 if __name__ == '__main__':
     relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
-    config = {'batch_size': 128, 'epoch_number': 0, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
-        'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':'jan28',
-        'eval': False, 'relation_list':[]}
+    config = {'batch_size': 128, 'epoch_number': 3, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
+        'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':'jan29',
+        'eval': True, 'relation_list':[]}
     #config = {'doc_emb_path': 'baselines/doc2cube/tmp/d.vec', 'dataset':'NYT_sports', 'method':'doc2cube', 
     #'label_emb_path':'baselines/doc2cube/tmp/l.vec'}
 

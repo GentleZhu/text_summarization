@@ -20,7 +20,7 @@ config = {'batch_size': 128, 'epoch_number': 0, 'emb_size': 100, 'kb_emb_size': 
 		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':'jan29',
 		'preprocess': True, 'relation_list1':relation_list1, 'relation_list2': relation_list2,
 		  'doc_emb_path': 'intermediate_data/pretrain_doc.emb', 'label_emb_path': 'intermediate_data/pretrain_label.emb',
-		  'stage': 'test', 'summ_method': 'kams'}
+		  'stage': 'test', 'summ_method': 'caseOLAP', 'topk':100}
 
 #config['method'] = 'knowledge2skip_gram'
 #config['dataset'] = 'NYT_sports'
@@ -48,29 +48,6 @@ def load_gt_labels(label_path):
     #print("Ground Truth Counts:", counts)
     #print(labels)
     return target_domain
-
-def soft_assign_docs(doc_embeddings, label_embeddings):
-    # Use cosine similarity to assign docs to labels
-    # doc_embeddings: 2-d numpy array
-    # label_embeddings: dict. {'football': vec, ...}
-    doc_assignment = []
-    top_label_assignment = defaultdict(list)
-    for idx in range(doc_embeddings.shape[0]):
-        vec = doc_embeddings[idx]
-        local_list = []
-        for label in label_embeddings:
-            label_vec = label_embeddings[label]
-            local_list.append((label, np.dot(vec, label_vec)))
-            #local_list.append((label, scipy.spatial.distance.cosine(vec, label_vec)))
-        m = sorted(local_list, key=lambda t:t[1], reverse=True)[:3]
-        doc_assignment.append(m)
-        top_label_assignment[m[0][0]].append([idx, m[0][1]])
-    for key in top_label_assignment:
-    	top_label_assignment[key].sort(key=lambda x:x[1], reverse=True)
-        #if idx > 10:
-        #    break
-        #print(local_list)
-    return doc_assignment, top_label_assignment
 
 def load_model(config):
 
@@ -184,6 +161,8 @@ if __name__ == '__main__':
 		print("Loading Embedding")
 		#Sports Test Documents
 		set_docs = [
+		[1002, 33719, 62913, 2123, 122759, 36113, 35827, 16109], #korea nuclear
+		[1848, 55838, 138468, 55669, 69069, 53809, 23665, 61064, 82084, 61629], #physics
 		[5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945], #basketball
 		[51, 256, 381, 169, 45296, 667],
 		[52, 357, 629, 936, 801, 1681, 1105, 725],
@@ -212,7 +191,7 @@ if __name__ == '__main__':
 		#label_emb = load_label_emb(config['label_emb_path'])
 		#main_doc_assignment = load_gt_labels('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json')
 		# main_doc_assignment = background_doc_assign(doc_emb, label_emb, [''])
-		doc_assignment = background_doc_assign(model.doc_embeddings(), label2emb)
+		doc_assignment,top_label_assignment = soft_assign_docs(model.doc_embeddings(), label2emb)
 		FILELIST = open("intermediate_data/{}_{}_filelist.txt".format(config['summ_method'], config['dataset']), 'w')
 		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
 		
@@ -223,17 +202,16 @@ if __name__ == '__main__':
 			#TODO: @jingjing, rewrite target_doc_assign in utils, you can have label2emb.keys instead call concepts
 			doc_embeddings = model.doc_embeddings()
 			hierarchy = simple_hierarchy()
-			label = target_hier_doc_assign(hierarchy, docs, label2emb, doc_embeddings, option='hard')
-			embed()
-			exit()
-			main_label, target_label, sibling_labels = target_doc_assign(concepts, docs, label_emb, doc_emb)
+			label, all_siblings = target_hier_doc_assign(hierarchy, docs, label2emb, doc_embeddings, option='hard')
+			print(label, all_siblings)
+			# main_label, target_label, sibling_labels = target_doc_assign(concepts, docs, label_emb, doc_emb)
 			# main_set = set(map(lambda x:x[0], main_doc_assignment[main_label]))
-			main_set = set(main_doc_assignment)
 			# print(len(main_set))
-			siblings = retrieve_siblings(main_set, doc_assignment, sibling_labels, topk=100)
+			#siblings = retrieve_siblings(main_set, doc_assignment, sibling_labels, topk=100)
 			
-			twin_docs = siblings[target_label]
-			siblings_docs = [siblings[x] for x in siblings if x != target_label]
+			siblings_docs = [map(lambda x:x[0], top_label_assignment[l][:config['topk']]) for l in all_siblings if l != label]
+			twin_docs = map(lambda x:x[0], top_label_assignment[label][:config['topk']])
+			print(siblings_docs, twin_docs)
 			print("Number of sibling groups: {}".format(len(siblings_docs)))
 
 			
