@@ -312,7 +312,7 @@ def generate_candidate_phrases(document_phrase_cnt, docs):
                 phrase2idx[phrase] = len(phrase2idx)
     return phrase2idx
 
-def generate_caseOLAP_scores(sibling_groups, target_set, document_phrase_cnt, inverted_index, phrase2idx, option = 'A'):
+def generate_caseOLAP_scores(sibling_groups, target_set, document_phrase_cnt, inverted_index, phrase2idx, option = 'G'):
     phrase_candidates = list(phrase2idx.keys())
     target_phrase_freq = defaultdict(int)
     for idx in target_set:

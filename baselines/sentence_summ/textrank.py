@@ -68,7 +68,7 @@ def main():
         for id in summary_id:
             summary += raw_sentences[id]
 
-        f = open('res/' + s + '.txt', 'w')
+        f = open('tmp/system/' + s + '.txt', 'w')
         f.write(summary)
         f.close()
 

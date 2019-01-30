@@ -54,7 +54,7 @@ def select_sentences(budget, scores, sentences):
     return chosen
 
 def main():
-    delta = 0.25
+    delta = 0.2
     budget = 665
     para = 0.5
     beta = 0.1
@@ -83,12 +83,13 @@ def main():
             #scores[i] = repr_scores[i]
             scores[i] = math.log(div_scores[i] + 0.01) + math.log(len_scores[i] + 0.01) + math.log(repr_scores[i] + 0.01)
 
+        '''
         chosen = select_sentences(budget, scores, raw_sentences)
         summary = ''
         for i in chosen:
             summary += ' ' + raw_sentences[i]
-
         '''
+
         chosen = [False for _ in raw_sentences]
         summary_id = []
 
@@ -116,9 +117,8 @@ def main():
         summary = ''
         for id in summary_id:
             summary += raw_sentences[id]
-        '''
 
-        f = open('res/' + s + '.txt', 'w')
+        f = open('tmp/system/' + s + '.txt', 'w')
         f.write(summary)
         f.close()
 

@@ -7,10 +7,9 @@ import os
 import subprocess
 from nltk.stem.porter import *
 
-duc_set = ['d30001t', 'd30002t', 'd30003t', 'd30005t', 'd30006t', 'd30007t', 'd30008t', 'd30010t', 'd30011t',
-           'd30015t', 'd30017t', 'd30020t', 'd30022t', 'd30024t', 'd30026t', 'd30027t', 'd30028t', 'd30029t',
-           'd30031t', 'd30033t', 'd30034t', 'd30036t', 'd30037t', 'd30038t', 'd30040t', 'd30042t', 'd30044t',
-           'd30045t', 'd30046t', 'd30047t']
+duc_set = ['d30048t', 'd30049t', 'd30050t', 'd30051t', 'd30053t', 'd30055t', 'd30056t', 'd30059t', 'd31001t',
+           'd31008t', 'd31009t', 'd31013t', 'd31022t', 'd31026t', 'd31031t', 'd31032t', 'd31033t', 'd31038t',
+           'd31043t', 'd31050t']
 
 def load_corpus(corpusIn, target_set, stopword_path):
     stemmer = PorterStemmer()
@@ -40,7 +39,7 @@ def load_corpus(corpusIn, target_set, stopword_path):
     return passages, raw_sentences
 
 def generate_duc_docs(file_name, stopword_path):
-    prefix = '/shared/data/qiz3/text_summ/data/TextSummarizer-master/DUC-2004/Cluster_of_Docs/'
+    prefix = '/shared/data/qiz3/text_summ/data/TextSummarizer-master/TestDUC/'
     cwd = os.getcwd()
 
     stopwords = set()
@@ -70,6 +69,29 @@ def generate_duc_docs(file_name, stopword_path):
                     raw_sentences.append(sentence)
                     passages.append(e_s)
     os.chdir(cwd)
+    return passages, raw_sentences
+
+def generate_duc_docs_autophrase(file_name):
+    file_path = '/shared/data/qiz3/text_summ/src/jt_code/HiExpan/data/nyt/intermediate/segmentation1.txt'
+
+    index = duc_set.index(file_name)
+    r_l = 167842 + index * 10
+    r_r = r_l + 10
+    passages = []
+    raw_sentences = []
+    for idx, content in enumerate(open(file_path).readlines()):
+        if idx < r_l or idx >= r_r:
+            continue
+        content = content.strip('\n')
+        sentences = sent_tokenize(content)
+        for sentence in sentences:
+            if len(sentence) < 5:
+                continue
+            phrases = re.findall('<phrase>.*?</phrase>', sentence)
+            phrases = [phrase[8:-9].replace(' ', '_').lower() for phrase in phrases]
+            if len(phrases) > 0:
+                raw_sentences.append(sentence.replace('<phrase>', '').replace('</phrase>', ''))
+                passages.append(phrases)
     return passages, raw_sentences
 
 def calculate_len(passages, raw_sentences):
@@ -124,8 +146,20 @@ def eval_duc_full():
         score += s
     return score / c
 
+def evaluate_rouge155():
+    from pyrouge import Rouge155
+
+    r = Rouge155()
+    r.system_dir = '/shared/data/qiz3/text_summ/text_summarization/baselines/sentence_summ/tmp/system/'
+    r.model_dir = '/shared/data/qiz3/text_summ/text_summarization/baselines/sentence_summ/tmp/model/'
+    r.system_filename_pattern = 'd(\d+)t.txt'
+    r.model_filename_pattern = 'D#ID#.M.100.T.[A-Z]'
+
+    output = r.convert_and_evaluate()
+    print(output)
+
 if __name__ == '__main__':
-    print(eval_duc_full())
+    evaluate_rouge155()
     exit()
     stopword_path = '/shared/data/qiz3/text_summ/data/stopwords.txt'
     corpusIn = open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.txt')

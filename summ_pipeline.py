@@ -6,9 +6,11 @@ import pickle, torch
 from phraseExtractor import phraseExtractor
 sys.path.append('./models/')
 import embedder
+import sys
 from summarizer import collect_statistics, build_in_domain_dict, generate_caseOLAP_scores, build_co_occurrence_matrix
 from summarizer import textrank, ensembleSumm, seedRanker, GCNRanker
 from models.model import KnowledgeEmbed
+import configparser
 
 #relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
 # relation_list1: hop=1, relation_list2: hop>1
@@ -16,11 +18,6 @@ relation_cat, reversed_hier, relation_list1 = generate_relations()
 #relation_list1= ['P85', 'P86', 'P87', 'P162', 'P175', 'P264', 'P358', 'P406', 'P412', 'P434', 'P658', 'P676', 'P870', 'P942', 'P1191', 'P1303']
 relation_list1 = ['P641']
 relation_list2 = ['P31']#, 'P279', 'P361']
-config = {'batch_size': 128, 'epoch_number': 0, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
-		'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':'jan29',
-		'preprocess': True, 'relation_list1':relation_list1, 'relation_list2': relation_list2,
-		  'doc_emb_path': 'intermediate_data/pretrain_doc.emb', 'label_emb_path': 'intermediate_data/pretrain_label.emb',
-		  'stage': 'test', 'summ_method': 'caseOLAP', 'topk':100}
 
 #config['method'] = 'knowledge2skip_gram'
 #config['dataset'] = 'NYT_sports'
@@ -68,8 +65,23 @@ def load_model(config):
     model.cuda()
     return model
 
+def load_config(file_path):
+	conf = configparser.ConfigParser()
+	conf.read(file_path)
+	config = dict(conf['DEFAULT'])
+	config['batch_size'] = int(config['batch_size'])
+	config['epoch_number'] = int(config['epoch_number'])
+	config['emb_size'] = int(config['emb_size'])
+	config['kb_emb_size'] = int(config['kb_emb_size'])
+	config['num_sample'] = int(config['num_sample'])
+	config['gpu'] = int(config['gpu'])
+	config['topk'] = int(config['topk'])
+	return config
+
 if __name__ == '__main__':
 	#Interface of training various embeddings
+	config_file = sys.argv[1]
+	config = load_config(config_file)
 	if config['stage'] == 'train':
 		if config['preprocess']:
 			graph_builder = textGraph(None)
@@ -78,7 +90,8 @@ if __name__ == '__main__':
 			print("Loading Hierarchies")
 			text_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.txt'.format(config['dataset'])
 			json_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.json'.format(config['dataset'])
-			h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
+			#config['dataset']
+			h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], 'NYT_full'), 'rb'))
 			sports = pickle.load(open("hierarchy_sports.p", 'rb'))
 			#h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
 
@@ -161,9 +174,9 @@ if __name__ == '__main__':
 		print("Loading Embedding")
 		#Sports Test Documents
 		set_docs = [
+		[5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945],  # basketball
 		[1002, 33719, 62913, 2123, 122759, 36113, 35827, 16109], #korea nuclear
 		[1848, 55838, 138468, 55669, 69069, 53809, 23665, 61064, 82084, 61629], #physics
-		[5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945], #basketball
 		[51, 256, 381, 169, 45296, 667],
 		[52, 357, 629, 936, 801, 1681, 1105, 725],
 		[77, 6218, 11847, 615, 1940, 5458, 3169, 10201, 2453, 47171],
@@ -211,7 +224,7 @@ if __name__ == '__main__':
 			
 			siblings_docs = [map(lambda x:x[0], top_label_assignment[l][:config['topk']]) for l in all_siblings if l != label]
 			twin_docs = map(lambda x:x[0], top_label_assignment[label][:config['topk']])
-			print(siblings_docs, twin_docs)
+			#print(siblings_docs, twin_docs)
 			print("Number of sibling groups: {}".format(len(siblings_docs)))
 
 			
@@ -222,29 +235,37 @@ if __name__ == '__main__':
 				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
 				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
 	                                                           phrase2idx)
+				embed()
+				exit()
 
 			elif config['summ_method'] == 'caseOLAP-twin': 
 
 				#############################
 				# Diversified ranking block #
 				#############################
-				'''
 				phrase2idx, idx2phrase = build_in_domain_dict(twin_docs, document_phrase_cnt)
-				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, twin_docs, document_phrase_cnt, inverted_index, phrase2idx)
+				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, twin_docs, document_phrase_cnt,
+															   inverted_index, phrase2idx, option='A')
 				
-				twin_rank = list(map(lambda x:x[0], ranked_list))
-
-				similarity_scores, _ = calculate_pairwise_similarity(phrase2idx)
-				selected_index = select_phrases(scores, similarity_scores, 2, 1000)
-				phrases = [idx2phrase[k] for k in selected_index]
-				'''
+				#twin_rank = list(map(lambda x:x[0], ranked_list))
+				#similarity_scores, _ = calculate_pairwise_similarity(phrase2idx)
+				#selected_index = select_phrases(scores, similarity_scores, 2, 1000)
+				#phrases = [idx2phrase[k] for k in selected_index]
 
 				##################
 				# caseOLAP block #
 				##################
 				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
-				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
-	                                                           phrase2idx)
+				scores_, ranked_list_ = generate_caseOLAP_scores([twin_docs], docs, document_phrase_cnt, inverted_index,
+	                                                           phrase2idx, option='B')
+				phrase_scores = {t[0]: t[1] for t in ranked_list_}
+				background_scores = {t[0]: t[1] for t in ranked_list}
+				for phrase in phrase2idx:
+					phrase_scores[phrase] *= background_scores[phrase]
+				ranked_list = [(k, phrase_scores[k]) for k in phrase_scores]
+				ranked_list = sorted(ranked_list, key=lambda t: -t[1])
+				embed()
+				exit()
 
 			elif config['summ_method'] == 'textrank':
 				###################
@@ -270,7 +291,7 @@ if __name__ == '__main__':
 				
 				ranked_list = GCNRanker(phrase2idx.keys(), similarity_scores, phrase2idx, idx2phrase, labels)
 				ranked_list = sorted(ranked_list, key=lambda x:x[1], reverse=True)
-
+				#embed()
 				'''
 				ranked_lists = []
 				for doc in docs:
