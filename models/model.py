@@ -427,3 +427,4 @@ class GCN(nn.Module):
         x = F.dropout(x, self.dropout, training=self.training)
         x = self.gc2(x, adj)
         return F.log_softmax(x, dim=1)
+        #return t.sum(F.softmax(x), 1)

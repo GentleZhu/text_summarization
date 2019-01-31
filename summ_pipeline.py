@@ -178,17 +178,18 @@ if __name__ == '__main__':
 		print("Loading Embedding")
 		#Sports Test Documents
 		set_docs = [
-		list(range(167852, 167862)),
+		#list(range(167852, 167862)),
+		#[15873, 42243, 98051, 101637, 61064, 56336, 42131, 74261, 42524, 30749, 44702, 46761, 61489, 61629, 160829, 7487, 105669, 75085, 36304, 55646, 95585, 750, 23665, 148730, 112379, 10367], #dark matter
 		[5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945],  # basketball
-		[1002, 33719, 62913, 2123, 122759, 36113, 35827, 16109], #korea nuclear
-		[1848, 55838, 138468, 55669, 69069, 53809, 23665, 61064, 82084, 61629], #physics
+		#[1002, 33719, 62913, 2123, 122759, 36113, 35827, 16109], #korea nuclear
+		#[1848, 55838, 138468, 55669, 69069, 53809, 23665, 61064, 82084, 61629], #physics
 		[51, 256, 381, 169, 45296, 667],
 		[52, 357, 629, 936, 801, 1681, 1105, 725],
 		[77, 6218, 11847, 615, 1940, 5458, 3169, 10201, 2453, 47171],
 		[79, 1163, 2576, 15069, 2836, 11288, 3169, 1680, 14666, 5646, 11569],
 		[99, 2323, 14379, 4422, 4573, 5148, 292, 1322, 6811, 6654, 382]
 		]
-		set_docs = [list(range(167842 + 10 * i, 167852 + 10 * i)) for i in range(20)]
+		#set_docs = [list(range(167842 + 10 * i, 167852 + 10 * i)) for i in range(20)]
 
 		graph_builder = textGraph(None)
 		graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
@@ -230,8 +231,8 @@ if __name__ == '__main__':
 			# print(len(main_set))
 			#siblings = retrieve_siblings(main_set, doc_assignment, sibling_labels, topk=100)
 			
-			siblings_docs = [map(lambda x:x[0], top_label_assignment[l][:config['topk']]) for l in all_siblings if l != label]
-			twin_docs = map(lambda x:x[0], top_label_assignment[label][:config['topk']])
+			siblings_docs = [list(map(lambda x:x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings if l != label]
+			twin_docs = list(map(lambda x:x[0], top_label_assignment[label][:config['topk']]))
 			#print(siblings_docs, twin_docs)
 			print("Number of sibling groups: {}".format(len(siblings_docs)))
 
@@ -289,19 +290,57 @@ if __name__ == '__main__':
 				phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
 
 			elif config['summ_method'] == 'kams':
+
+				phrase2idx, idx2phrase = build_in_domain_dict(twin_docs, document_phrase_cnt)
+				scores_, ranked_list_ = generate_caseOLAP_scores(siblings_docs, twin_docs, document_phrase_cnt,inverted_index, phrase2idx, option='A')
 				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
-				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx)
+				scores, ranked_list = generate_caseOLAP_scores([twin_docs], docs, document_phrase_cnt, inverted_index, phrase2idx, option='B')
+				
+				phrase_scores = [t[0] for t in ranked_list]
+				background_scores = [t[0] for t in ranked_list_]
+
 				labels = dict()
-				for r in ranked_list[:30]:
-					labels[r[0]] = 1
-				for r in ranked_list[-30:]:
-					labels[r[0]] = 0
+				for r in phrase_scores[:10]:
+					labels[r] = 1
+
+				for p in background_scores[:1000]:
+					if p in phrase_scores[:50]:
+						labels[p] = 0
+
 				similarity_scores = build_co_occurrence_matrix(docs, phrase2idx,
 				        '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt')
 				
-				ranked_list = GCNRanker(phrase2idx.keys(), similarity_scores, phrase2idx, idx2phrase, labels)
-				ranked_list = sorted(ranked_list, key=lambda x:x[1], reverse=True)
-				#embed()
+				ranked_list = seedRanker(phrase2idx.keys(), similarity_scores, phrase2idx, idx2phrase, labels)
+				#kams_ranked_list = GCNRanker(phrase2idx.keys(), similarity_scores, phrase2idx, idx2phrase, labels)
+				#kams_ranked_list = sorted(kams_ranked_list, key=lambda x:x[1], reverse=True)
+				'''
+				##########################
+				# Manifold ranking block #
+				##########################
+				'''
+				'''
+				phrase2idx, idx2phrase = build_in_domain_dict(twin_docs, document_phrase_cnt)
+				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, twin_docs, document_phrase_cnt,
+															   inverted_index,
+															   phrase2idx)
+				phrase_selected = 1000
+				all_phrases = [t[0] for t in ranked_list[:phrase_selected]]
+				phrase2idx = {phrase: i for (i, phrase) in enumerate(all_phrases)}
+				idx2phrase = {phrase2idx[k]: k for k in phrase2idx}
+				similarity_scores, _ = calculate_pairwise_similarity(phrase2idx)
+				topic_scores = np.zeros([len(phrase2idx)])
+				for i in range(phrase_selected):
+					topic_scores[phrase2idx[ranked_list[i][0]]] = ranked_list[i][1]
+				target_phrase2idx = generate_candidate_phrases(document_phrase_cnt, docs)
+				target_phrases = [phrase for phrase in phrase2idx if phrase in target_phrase2idx]
+				twin_phrases = [phrase for phrase in phrase2idx if phrase not in target_phrase2idx]
+				A = manifold_ranking(twin_phrases, target_phrases, topic_scores, phrase2idx, similarity_scores)
+				ranked_list = [(phrase, A[phrase2idx[phrase]]) for phrase in target_phrases]
+				ranked_list = sorted(ranked_list, key=lambda t: -t[1])
+				embed()
+				'''
+
+
 				'''
 				ranked_lists = []
 				for doc in docs:
@@ -323,30 +362,8 @@ if __name__ == '__main__':
 			OUT.write(' '.join(map(str, docs)) + '\n')
 			for r in ranked_list[:30]:
 				OUT.write("{} {}\n".format(r[0], r[1]))
-			##########################
-			# Manifold ranking block #
-			##########################
-			'''
-			phrase2idx, idx2phrase = build_in_domain_dict(twin_docs, document_phrase_cnt)
-			scores, ranked_list = generate_caseOLAP_scores(siblings_docs, twin_docs, document_phrase_cnt,
-														   inverted_index,
-														   phrase2idx)
-			phrase_selected = 1000
-			all_phrases = [t[0] for t in ranked_list[:phrase_selected]]
-			phrase2idx = {phrase: i for (i, phrase) in enumerate(all_phrases)}
-			idx2phrase = {phrase2idx[k]: k for k in phrase2idx}
-			similarity_scores, _ = calculate_pairwise_similarity(phrase2idx)
-			topic_scores = np.zeros([len(phrase2idx)])
-			for i in range(phrase_selected):
-				topic_scores[phrase2idx[ranked_list[i][0]]] = ranked_list[i][1]
-			target_phrase2idx = generate_candidate_phrases(document_phrase_cnt, docs)
-			target_phrases = [phrase for phrase in phrase2idx if phrase in target_phrase2idx]
-			twin_phrases = [phrase for phrase in phrase2idx if phrase not in target_phrase2idx]
-			A = manifold_ranking(twin_phrases, target_phrases, topic_scores, phrase2idx, similarity_scores)
-			ranked_list = [(phrase, A[phrase2idx[phrase]]) for phrase in target_phrases]
-			ranked_list = sorted(ranked_list, key=lambda t: -t[1])
-			'''
-			break
+
+			#break
 		#pickle.dump(phrase_scores, open('baselines/sentence_summ/phrase_scores.p', 'wb'))
 	elif config['stage'] == 'finetune':
 		pass

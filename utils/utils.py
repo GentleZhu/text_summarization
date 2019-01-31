@@ -763,7 +763,7 @@ def target_hier_doc_assign(hierarchy, docs, label_embeddings, doc_embeddings, op
 
 def simple_hierarchy():
     hierarchy = {}
-    hierarchy['root'] = ['politics']#'['science', 'type_of_sport', 'politics', 'economics']
+    hierarchy['root'] = ['type_of_sport']#'['science', 'type_of_sport', 'politics', 'economics']
     hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry', 'maths']
     hierarchy['type_of_sport'] = ['swimming', 'figure_skating', 'cycle_sport', 'ice_hockey', 'auto_racing',
                                   'chess', 'american_football', 'cricket', 'athletics', 'alpine_skiing',
