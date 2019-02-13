@@ -92,29 +92,36 @@ def Train(config, X, params):
 			print("Epoch:{}, Loss:{}, Relational Bias:{}".format(epoch, sum(test_loss), sum(relational_bias)))
 	elif config['method'] == 'KnowledgeEmbed':
 		#print(X[0].shape, X[1].shape)
+		hier_flag = False
+		if len(X) == 3:
+			hier_flag = True
+			ll = t.LongTensor(X[2])
+			print('constrain shape', ll.shape)
 		train_loader = tdata.DataLoader(
-             KnowledgeEmbedDataset(X),
+             KnowledgeEmbedDataset(X[:2]),
              batch_size=config['batch_size'], shuffle=True, pin_memory=True)
 		num_words, num_docs, num_labels = params
 		t.cuda.set_device(int(config['gpu']))
 		model = KnowledgeEmbed(num_words=num_words, num_docs=num_docs, num_labels=num_labels, embed_size=config['emb_size'])
 
 		#optimizer = SparseAdam(params=model.parameters(), lr=0.0001)
-		optimizer = SparseAdam(params=model.parameters(), lr=0.0005)
+		optimizer = SparseAdam(params=model.parameters(), lr=0.001)
 
 		model.cuda()
 
 		for epoch in range(config['epoch_number']):
 			epoch_loss = 0.0
 			for batch_data in tqdm(train_loader):
-				#print(batch_data[0][:,0].data.cpu().numpy().tolist())
-				loss = model(batch_data, config['num_sample'])
+				if hier_flag:
+					loss = model(batch_data, ll, config['num_sample'])
+				else:
+					loss = model(batch_data, config['num_sample'])
 				epoch_loss += loss
 				model.zero_grad()
 				loss.backward()
 				optimizer.step()
 
-			if epoch % 3 == 0:
+			if epoch % 1 == 0:
 				model_path = "{}{}_{}_id_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['id'], epoch)
 				t.save(model.state_dict(), model_path)
 			print("Epoch:{}, Loss:{}".format(epoch, epoch_loss))

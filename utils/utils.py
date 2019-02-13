@@ -109,6 +109,7 @@ class textGraph(object):
         # Initialize the returned data
         self.data = []
         self.tuple_data = []
+        self.ll_data = []
         non_occur = 0
         for sentence in self.texts:
             sentence_data = []
@@ -135,6 +136,12 @@ class textGraph(object):
                 #print(len(self.name2id))
                 #assert True == False
                 word_ix = 0
+        for tup in self.label_constraints:
+            ll = []
+            for _t in tup:
+                ll.append(self.label2id[_t])
+            self.ll_data.append(ll)
+        print(self.label_constraints, self.ll_data)
         print("Filtered_phrases:{}".format(non_occur))
 
     def load_corpus(self, corpusIn, jsonIn, relation_cat = None, reversed_hier = None, attn = False):
@@ -170,13 +177,12 @@ class textGraph(object):
         if attn:
             return hierarchy, t2wid, wid2surface
 
-    def load_concepts(self, concepts):
+    def load_concepts(self, concepts, tops = ['science', 'type_of_sport', 'politics', 'economics']):
         
         for concept in concepts:
             for l in concept.labels:
                 if l not in self.label2id:
                     self.label2id[l] = len(self.label2id)
-        
         '''
         for concept in concepts:
             for l in concept.links:
@@ -185,7 +191,7 @@ class textGraph(object):
                         self.label2id[v] = len(self.label2id)
                         '''
         self.num_labels = len(self.label2id)
-        for idx,line in enumerate(tqdm(self.texts)):
+        for line in tqdm(self.texts):
             for concept in concepts:
                 #concept.link_corpus(tokens)
             #break
@@ -195,11 +201,20 @@ class textGraph(object):
         print("pre-linking done")
         for concept in concepts:
             concept.count_seeds()
+            print(concept.clean_links)
 
-        for idx,line in enumerate(tqdm(self.texts)):
+        for idx,line in tqdm(enumerate(self.texts)):
             for concept in concepts:
                 self.tuples.extend(concept.link_corpus(line))
+            if idx == 167841:
+                print("Linked tuples of NYT Annotated Corpus is :{}".format(len(self.tuples)))
+        print("Linked tuples of NYT Annotated Corpus is :{}".format(len(self.tuples)))
+        
         print("entity-linking done")
+
+        self.label_constraints = []
+        for concept in concepts:
+            self.label_constraints.extend(concept.output_concepts(tops))
 
         #for concept in concepts:
         #    print(concept.output_concepts())
@@ -299,7 +314,7 @@ class textGraph(object):
             for tup in self.tuple_data:
                 inputs.append([tup[0], tup[2] + len(self.data)])
                 outputs.append(tup[1])
-        np_data = [np.array(inputs), np.array(self.tuple_data)]
+        np_data = [np.array(inputs), np.array(self.tuple_data), np.array(self.ll_data)]
         #batch_data = np.array(inputs)
         #label_data = np.transpose(np.array([outputs]))
         #print("Training data stats: records {}, kb pairs {}".format(batch_data.shape[0], len(self.tuple_data)))
@@ -473,6 +488,7 @@ class Concept:
         self.labels = []
         self.count = defaultdict(int)
         self.seeds = defaultdict(list)
+        self.out = ['maths', 'swimming', 'figure_skating', 'cycle_sport', 'auto_racing', 'chess', 'cricket', 'athletics', 'alpine_skiing']
         #self.inter_count = defaultdict(int)
         #print(self.hierarchy.p2c['type of sport'])
     
@@ -484,6 +500,8 @@ class Concept:
                 continue
             #print('{}{}'.format('\t'*(self.height - height), v[0].encode('ascii','ignore')))
             if v[1] > 0:
+                if self.normalize(v[0]) in self.out:
+                    continue
                 self.labels.add(self.normalize(v[0]))
                 self.dfs(v, height - 1)
                 #self.links[v[0]].append([node[0], relations[depth]])
@@ -495,16 +513,12 @@ class Concept:
         self.root = _concept[0]
         self.dfs(self.root, self.height - 1)
 
-    def output_concepts(self, path):
-        output_tuple = []
-        with open(path, 'w') as OUTPUT:
-            for k,vl in self.links.items():
-                for v in vl:
-                    if v[0] == self.root[0]:
-                        v[0] = k
-                    OUTPUT.write("{}|{}\n".format(v[0], k))
-                    output_tuple.append([k.lower().replace(' ', '_'), v[0].lower().replace(' ', '_'), v[1]])
-        return output_tuple
+    def output_concepts(self, neg):
+        for t in self.output_tuple:
+            for n in neg:
+                if n != t[1]:
+                    t.append(n)
+        return self.output_tuple
 
     def concept_link(self, phrases):
         linked_nodes = set()
@@ -518,13 +532,20 @@ class Concept:
         return phrase.lower().replace(' ', '_')
 
     def count_seeds(self):
+        self.output_tuple = []
         for k in self.seeds:
             candidates = []
             for p in set(self.seeds[k]):
                 candidates.append([p, self.count[p]])
             candidates.sort(key=lambda x:x[1], reverse=True)
             for kw in candidates[:50]:
-                self.clean_links[kw[0]] = self.links[kw[0]]
+                if kw[0] in self.labels:
+                    self.clean_links[kw[0]] = [kw[0]]
+                else:
+                    self.clean_links[kw[0]] = self.links[kw[0]]
+        for kw in self.labels:
+            if kw in self.links:
+                self.output_tuple.append([kw, self.links[kw][0]])
 
     def link_corpus(self, phrases):
         #print(self.links)
@@ -759,15 +780,19 @@ def target_hier_doc_assign(hierarchy, docs, label_embeddings, doc_embeddings, op
         if entropy > threshold:
             break
         current_node = children[np.argmax(freq)]
+        #break
     return current_node, children
 
 def simple_hierarchy():
     hierarchy = {}
-    hierarchy['root'] = ['type_of_sport']#'['science', 'type_of_sport', 'politics', 'economics']
-    hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry', 'maths']
-    hierarchy['type_of_sport'] = ['swimming', 'figure_skating', 'cycle_sport', 'ice_hockey', 'auto_racing',
-                                  'chess', 'american_football', 'cricket', 'athletics', 'alpine_skiing',
-                                  'basketball', 'tennis', 'association_football', 'golf', 'baseball']
+    hierarchy['root'] = ['science', 'type_of_sport', 'politics', 'economics']
+    #hierarchy['root'] = ['science']
+    #hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry', 'maths']
+    hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry']
+    #hierarchy['type_of_sport'] = ['swimming', 'figure_skating', 'cycle_sport', 'ice_hockey', 'auto_racing',
+    #                              'chess', 'american_football', 'cricket', 'athletics', 'alpine_skiing',
+    #                              'basketball', 'tennis', 'association_football', 'golf', 'baseball']
+    hierarchy['type_of_sport'] = ['american_football', 'ice_hockey', 'association_football', 'golf', 'basketball', 'baseball', 'tennis']
     hierarchy['politics'] = ['elections', 'political_other']
     hierarchy['economics'] = ['coporations', 'economics_other']
     return hierarchy

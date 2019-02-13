@@ -22,15 +22,13 @@ from numpy.linalg import matrix_power
 from phraseExtractor import phraseExtractor
 
 def GCNRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels, hidden = 16):
-    normalized_sim = np.zeros(similarity_scores.shape, dtype=np.float32)
-    #print("NEW")
+    assert np.allclose(similarity_scores, similarity_scores.T)
     for i in range(similarity_scores.shape[0]):
-        similarity_scores[i, i] = 0.0
-        sum_ = np.sum(similarity_scores[:, i])
-        if sum_ == 0:
-            continue
-        for j in range(similarity_scores.shape[0]):
-            normalized_sim[j, i] = similarity_scores[j, i] / sum_
+        similarity_scores[i,i] = similarity_scores[i,i] + 1.0
+    rowsum = 1.0 / similarity_scores.sum(1)
+    
+    normalized_sim = np.diag(rowsum).dot(similarity_scores).astype(np.float32)
+    #print(normalized_sim.sum(1))
     # Load data
     input_labels = np.zeros([similarity_scores.shape[0]])
     idx_train = []
@@ -50,7 +48,7 @@ def GCNRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels,
                 nclass=labels.max().item() + 1,
                 dropout=0.5)
     optimizer = torch.optim.Adam(model.parameters(),
-                           lr=0.01)
+                           lr=0.001)
 
     model.train()
     
@@ -63,16 +61,19 @@ def GCNRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels,
         optimizer.step()
         if epoch % 20 == 0:
             print("Epoch:{}, Loss:{}".format(epoch, loss_train))
+    print(labels[idx_train])
     model.eval()
     output = model(features, adj)
     preds = output.max(1)[1].type_as(labels)
     top_list = []
     for i in range(len(phrase2idx)):
-        if preds[i] == 1:
-            top_list.append([idx2phrase[i], output[i][1].data.cpu().item()])
+        #if preds[i] == 1:
+        top_list.append([idx2phrase[i], math.exp(output[i][1].data.cpu().item())])
+    top_list = sorted(top_list, key=lambda x:x[1], reverse=True)
+    print(top_list[:30])
     return top_list
 
-def seedRanker(target_phrases, similarity_scores, phrase2idx, reweight=None, sink=[]):
+def seedRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels):
     # Textrank.
     threshold = 0.0001
     alpha = 0.85
@@ -90,16 +91,13 @@ def seedRanker(target_phrases, similarity_scores, phrase2idx, reweight=None, sin
     # together with embedding learning
     assert num_target == similarity_scores.shape[0]
     I = np.eye(num_target)
-    for t in enumerate(target_phrases):
-            if t in sink:
-                I[phrase2idx[t],phrase2idx[t]] = 0
-
     weight = np.zeros([num_target])
-    if reweight:
-        for t in target_phrases:
-            if t in reweight:
+    for t in target_phrases:
+        if t in labels:
+            if labels[t] == 0:
+                I[phrase2idx[t],phrase2idx[t]] = 0
+            elif labels[t] == 1:
                 weight[phrase2idx[t]] = 1
-    
     scores = 1.0 / num_target * np.ones([num_target])
     #topic_scores = scores.copy()
     current_scores = scores.copy()
@@ -112,8 +110,9 @@ def seedRanker(target_phrases, similarity_scores, phrase2idx, reweight=None, sin
         if dist < threshold:
             break
         current_scores = scores
-
-    return scores
+    ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
+    ranked_list = sorted(ranked_list, key=lambda t:-t[1])
+    return ranked_list
 
 def manifold_ranking(twin_phrases, target_phrases, topic_scores, phrase2idx, similarity_scores):
     # Manifold ranking with sink points.
@@ -230,9 +229,10 @@ def build_co_occurrence_matrix(target, phrase2idx, seg_file):
                 tmp_passage.append('_'.join(token_list))
             elif IN_PHRASE_FLAG:
                 token_list.append(t)
-        passage.append(tmp_passage)
-    for sentence in passage:
-        for idx, phrase in enumerate(sentence):
+        '''
+        tmp_similarity_scores = np.zeros([len(phrase2idx), len(phrase2idx)])
+        single_occ_threshold = 3
+        for idx, phrase in enumerate(tmp_passage):
             if phrase not in phrase2idx:
                 continue
             for w in range(1, 4):
@@ -240,8 +240,27 @@ def build_co_occurrence_matrix(target, phrase2idx, seg_file):
                     break
                 if sentence[idx + w] not in phrase2idx:
                     continue
+                tmp_similarity_scores[phrase2idx[phrase], phrase2idx[sentence[idx + w]]] += 1
+                tmp_similarity_scores[phrase2idx[sentence[idx + w]], phrase2idx[phrase]] += 1
+                if tmp_similarity_scores[phrase2idx[phrase], phrase2idx[sentence[idx + w]]] > single_occ_threshold:
+                    tmp_similarity_scores[phrase2idx[phrase], phrase2idx[sentence[idx + w]]] = single_occ_threshold
+                if tmp_similarity_scores[phrase2idx[sentence[idx + w]], phrase2idx[phrase]] > single_occ_threshold:
+                    tmp_similarity_scores[phrase2idx[sentence[idx + w]], phrase2idx[phrase]] = single_occ_threshold
+        similarity_scores += tmp_similarity_scores
+    '''
+        passage.append(tmp_passage)
+    for sentence in passage:
+        for idx, phrase in enumerate(sentence):
+            if phrase not in phrase2idx:
+                continue
+            for w in range(1, 5):
+                if idx + w > len(sentence) - 1:
+                    break
+                if sentence[idx + w] not in phrase2idx:
+                    continue
                 similarity_scores[phrase2idx[phrase], phrase2idx[sentence[idx + w]]] += 1
                 similarity_scores[phrase2idx[sentence[idx + w]], phrase2idx[phrase]] += 1
+    #'''
     return similarity_scores
 
 def leven_similarity(phrase_a, phrase_b):
@@ -517,10 +536,10 @@ def pick_sentences(phrase_scores, budget, passage):
 def main():
     target_docs = [846, 845, 2394, 2904, 2633, 2565, 2956, 2728, 2491]
     #target_docs = [846]
-    segIn = open('/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/sports/intermediate/segmentation.txt')
+    segIn = open('/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt')
     stopword_path = '../../data/stopwords.txt'
-    passages = load_segmented_corpus(segIn, stopword_path)
-    document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/sports.txt')
+    #passages = load_segmented_corpus(segIn, stopword_path)
+    document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
     siblings, twin_docs = load_doc_sets()
 
     phrase2idx, idx2phrase = build_in_domain_dict(target_docs, document_phrase_cnt)

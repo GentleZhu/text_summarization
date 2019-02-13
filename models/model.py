@@ -384,6 +384,7 @@ class KnowledgeEmbed(nn.Module):
     def _forward(self, input_labels, u, v, num_sampled, opt = 0):
 
         use_cuda = self.word_embed.weight.is_cuda
+        assert use_cuda == True
         batch_size = input_labels.shape[0]
         input_ids = input_labels[:, 0]
         output_ids = input_labels[:, 1].unsqueeze(1)
@@ -400,13 +401,38 @@ class KnowledgeEmbed(nn.Module):
             return self.nce_loss(t.bmm(
                 u(input_ids).unsqueeze(1),
                 v(output_noise_ids).permute(0, 2, 1)).squeeze(dim=1))
+        else:
+            return self.hinge_loss(t.bmm(
+                u(input_ids).unsqueeze(1),
+                v(output_noise_ids).permute(0, 2, 1)).squeeze(dim=1))
 
-    def forward(self, batch_data, num_sampled):
+    def _regularize(self, input_labels, u, v, opt = 0):
+        use_cuda = self.word_embed.weight.is_cuda
+        input_ids = input_labels[:, 0]
+        output_ids = input_labels[:, 1:]
+
+        if use_cuda:
+            input_ids = input_ids.cuda()
+            output_ids = output_ids.cuda()
+
+        if opt == 0:
+            return self.nce_loss(t.bmm(
+                u(input_ids).unsqueeze(1),
+                v(output_ids).permute(0, 2, 1)).squeeze(dim=1))
+        else:
+            return self.hinge_loss(t.bmm(
+                u(input_ids).unsqueeze(1),
+                v(output_ids).permute(0, 2, 1)).squeeze(dim=1))
+
+
+
+    def forward(self, batch_data, ll, num_sampled):
         dt, lt = batch_data
         loss_a = self._forward(dt, self.doc_embed, self.word_embed, num_sampled)
         loss_b = self._forward(lt, self.label_embed, self.word_embed, num_sampled)
-        
-        return loss_a + loss_b
+        regularization = self._regularize(ll, self.label_embed, self.label_embed, 0)
+        return loss_a + loss_b + regularization
+        #return loss_a + loss_b
 
     def input_embeddings(self):
         return self.word_embed.weight.data.cpu().numpy()

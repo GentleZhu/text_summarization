@@ -1,0 +1,18 @@
+[DEFAULT]
+batch_size = 128
+epoch_number = 0
+emb_size = 100
+kb_emb_size = 100
+num_sample = 5
+gpu = 1
+model_dir = /shared/data/qiz3/text_summ/src/model/
+dataset = NYT_full
+method = KnowledgeEmbed
+id = jan31-hie-hinge
+preprocess = False
+doc_emb_path = intermediate_data/pretrain_doc.emb
+label_emb_path = intermediate_data/pretrain_label.emb
+stage = test
+summ_method = kams
+topk = 100
+
