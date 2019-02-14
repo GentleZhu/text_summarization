@@ -177,7 +177,7 @@ class textGraph(object):
         if attn:
             return hierarchy, t2wid, wid2surface
 
-    def load_concepts(self, concepts, tops = ['science', 'type_of_sport', 'politics', 'economics']):
+    def load_concepts(self, concepts, tops = ['politics', 'business', 'disaster', 'science', 'type_of_sport']):
         
         for concept in concepts:
             for l in concept.labels:
@@ -507,11 +507,22 @@ class Concept:
                 #self.links[v[0]].append([node[0], relations[depth]])
             self.links[self.normalize(v[0])].append(self.normalize(node[0]))
 
-    def construct_concepts(self, _concept):
+    def construct_concepts(self, _concept, option=False):
         self.height = _concept[1]
         self.labels = set([self.normalize(_concept[0][0])])
         self.root = _concept[0]
-        self.dfs(self.root, self.height - 1)
+        if not option:
+            self.dfs(self.root, self.height - 1)
+        else:
+            self.dfs_simple(self.root, self.height - 1)
+
+    def dfs_simple(self, node, height):
+        for v in self.hierarchy.p2c[node][height]:
+            if v[1] > 0:
+                self.labels.add(self.normalize(v[0]))
+                self.dfs(v, height - 1)
+                #self.links[v[0]].append([node[0], relations[depth]])
+            self.links[self.normalize(v[0])].append(self.normalize(node[0]))
 
     def output_concepts(self, neg):
         for t in self.output_tuple:

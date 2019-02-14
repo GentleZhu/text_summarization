@@ -152,6 +152,20 @@ def calculate_DCG(ranked_list, ground_truth, normalized=False):
         score += ground_truth[phrase] * 1.0 / math.log(2 + idx)
     return score
 
+def topk_eval(gt, ranked_list, topks):
+    return [calculate_f1(gt, [t[0] for t in ranked_list[:k]]) for k in topks]
+
+def calculate_f1(gt, system):
+    tp_cnt = 0
+    for p in gt:
+        if p in system:
+            tp_cnt += 1
+    prec, recall = 1.0 * tp_cnt / len(system), 1.0 * tp_cnt / len(gt)
+    if prec * recall == 0:
+        return 0
+    #return 2 * prec * recall / (prec + recall)
+    return prec
+
 def load_targetphrases(corpus, doc_ids):
     target_phrases = set()
     for doc_id in doc_ids:
@@ -257,7 +271,8 @@ if __name__ == '__main__':
         corpus = load_corpus('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
         #corpus = load_corpus('/shared/data/qiz3/text_summ/text_summarization/preprocess/AutoPhrase/models/NYT/segmentation.txt')
         ranked_list = []
-        ps, aps, dcgs = [], [], []
+        ps, aps, f1 = [], [], []
+        topks = [10, 15, 20, 25, 30]
         with open(sys.argv[2]) as FILE:
             file_list = FILE.readlines()
             for file_path in file_list:
@@ -277,13 +292,15 @@ if __name__ == '__main__':
                 #ranked_list = pickle.load(open('../models/data/ranked_list.p', 'rb'))
                 p, ap = calculate_AP(ranked_list, gt.keys())
 
-                dcg = calculate_DCG(ranked_list, gt)
+                #dcg = calculate_DCG(ranked_list, gt)
+                f1_scores = topk_eval(gt, ranked_list, topks)
                 
                 ps.append(p)
                 aps.append(ap)
-                dcgs.append(dcg)
-                print("Coverage of AutoPhrase:{}, Precision:{}, MAP:{}, DCG:{}".format(_, p, ap, dcg))
+                f1.append(f1_scores)
+                #print("Coverage of AutoPhrase:{}, Precision:{}, MAP:{}".format(p_prec, p, ap))
                 IN.close()
                 #break
-        print("Mirco-coverage of AutoPhrase:{}, Precision:{}, MAP:{}, DCG:{}".format(_, sum(ps)/len(ps), 
-            sum(aps)/len(aps), sum(dcgs)/len(dcgs)))
+        print("MAP:{}".format(sum(aps)/len(aps)))
+        #    sum(aps)/len(aps)))
+        print(np.mean(f1, axis=0))

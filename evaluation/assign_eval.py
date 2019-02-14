@@ -73,6 +73,8 @@ def cos_assign_docs(doc_embeddings, label_embeddings, gt_labels=None):
     doc_assignment = defaultdict(list)
     per_doc_assignment = defaultdict(str)
     for idx in range(doc_embeddings.shape[0]):
+        if idx not in gt_labels:
+            break
         if gt_labels and gt_labels[idx] == None:
             continue
         vec = doc_embeddings[idx]
@@ -184,8 +186,8 @@ def load_label_emb(emb_path):
 
 if __name__ == '__main__':
     relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
-    config = {'batch_size': 128, 'epoch_number': 3, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
-        'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':'jan29',
+    config = {'batch_size': 128, 'epoch_number': 1, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
+        'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':'feb01-hie-hinge',
         'eval': True, 'relation_list':[]}
     #config = {'doc_emb_path': 'baselines/doc2cube/tmp/d.vec', 'dataset':'NYT_sports', 'method':'doc2cube', 
     #'label_emb_path':'baselines/doc2cube/tmp/l.vec'}
@@ -219,7 +221,7 @@ if __name__ == '__main__':
             graph_builder.load_label("{}_label.p".format(config['dataset']))
             print(graph_builder.label2id)
             model = load_model(config)
-            assert(model.doc_embeddings().shape[0] == len(gt_labels))
+            #assert(model.doc_embeddings().shape[0] == len(gt_labels))
             #print(model.input_embeddings().shape)
             label2emb = dict()
             for k in labels:
