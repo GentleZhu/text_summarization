@@ -796,7 +796,7 @@ def target_hier_doc_assign(hierarchy, docs, label_embeddings, doc_embeddings, op
 
 def simple_hierarchy():
     hierarchy = {}
-    hierarchy['root'] = ['science', 'type_of_sport', 'politics', 'economics']
+    hierarchy['root'] = ['science', 'type_of_sport', 'politics', 'business', 'disaster']
     #hierarchy['root'] = ['science']
     #hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry', 'maths']
     hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry']
@@ -804,8 +804,9 @@ def simple_hierarchy():
     #                              'chess', 'american_football', 'cricket', 'athletics', 'alpine_skiing',
     #                              'basketball', 'tennis', 'association_football', 'golf', 'baseball']
     hierarchy['type_of_sport'] = ['american_football', 'ice_hockey', 'association_football', 'golf', 'basketball', 'baseball', 'tennis']
-    hierarchy['politics'] = ['elections', 'political_other']
-    hierarchy['economics'] = ['coporations', 'economics_other']
+    hierarchy['politics'] = ['gay_right', 'immigration_', 'law_', 'election_', 'gun_control_', ]
+    hierarchy['business'] = ['economy_', 'trade_', 'manufacturing_', 'stocks_and_bonds', ]
+    hierarchy['disaster'] = ['flood_', 'earthquake_', 'drought_', 'human_caused', 'hurricane_', 'wildfire_']
     return hierarchy
 
 def target_doc_assign(concepts, docs, label_embeddings, doc_embeddings):

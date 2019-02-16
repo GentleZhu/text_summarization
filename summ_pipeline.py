@@ -188,9 +188,9 @@ if __name__ == '__main__':
 		print("Loading Embedding")
 		#Sports Test Documents
 		set_docs = [
-		#list(range(167852, 167862)),
-		[15873, 42243, 98051, 101637, 61064, 56336, 42131, 74261, 42524, 30749, 44702, 46761, 61489, 61629, 160829, 7487, 105669, 75085, 36304, 55646, 95585, 750, 23665, 148730, 112379, 10367], #dark matter
+		list(range(167854, 167866)),
 		[5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945],  # basketball
+		[15873, 42243, 98051, 101637, 61064, 56336, 42131, 74261, 42524, 30749, 44702, 46761, 61489, 61629, 160829, 7487, 105669, 75085, 36304, 55646, 95585, 750, 23665, 148730, 112379, 10367], #dark matter
 		[1002, 33719, 62913, 2123, 122759, 36113, 35827, 16109], #korea nuclear
 		[1848, 55838, 138468, 55669, 69069, 53809, 23665, 61064, 82084, 61629], #physics
 		[51, 256, 381, 169, 45296, 667], #football
@@ -217,7 +217,6 @@ if __name__ == '__main__':
 		else:
 		    print('Missing:',k)
 
-
 		model = load_model(config)
 		#doc_emb = load_doc_emb(config['doc_emb_path'])
 		#label_emb = load_label_emb(config['label_emb_path'])
@@ -225,7 +224,7 @@ if __name__ == '__main__':
 		# main_doc_assignment = background_doc_assign(doc_emb, label_emb, [''])
 		doc_assignment,top_label_assignment = soft_assign_docs(model.doc_embeddings(), label2emb)
 		FILELIST = open("intermediate_data/{}_{}_filelist.txt".format(config['summ_method'], config['dataset']), 'w')
-		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/nyt.txt')
+		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/nyt_example.txt')
 
 		phrase_scores = {}
 
@@ -253,7 +252,7 @@ if __name__ == '__main__':
 			if config['summ_method'] == 'caseOLAP':
 				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
 				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
-	                                                           phrase2idx, option='A')
+	                                                           phrase2idx, option='B')
 				phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
 
 			elif config['summ_method'] == 'caseOLAP-twin': 

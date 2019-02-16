@@ -1,12 +1,12 @@
 [DEFAULT]
 batch_size = 128
-epoch_number = 11
+epoch_number = 0
 emb_size = 100
 kb_emb_size = 100
 num_sample = 5
 gpu = 3
 model_dir = /shared/data/qiz3/text_summ/src/model/
-dataset = NYT_full
+dataset = NYT_example
 method = KnowledgeEmbed
 id = feb01-hie-nce-lr_0.001
 preprocess = True
