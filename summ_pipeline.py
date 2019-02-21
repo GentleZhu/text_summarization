@@ -187,10 +187,12 @@ if __name__ == '__main__':
 	# Find concentrated concepts and specific common sense node
 		print("Loading Embedding")
 		#Sports Test Documents
+		embed()
+		exit()
 		set_docs = [
-		list(range(167854, 167866)),
-		[5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945],  # basketball
+		#list(range(167854, 167866)),
 		[15873, 42243, 98051, 101637, 61064, 56336, 42131, 74261, 42524, 30749, 44702, 46761, 61489, 61629, 160829, 7487, 105669, 75085, 36304, 55646, 95585, 750, 23665, 148730, 112379, 10367], #dark matter
+		[5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945],  # basketball
 		[1002, 33719, 62913, 2123, 122759, 36113, 35827, 16109], #korea nuclear
 		[1848, 55838, 138468, 55669, 69069, 53809, 23665, 61064, 82084, 61629], #physics
 		[51, 256, 381, 169, 45296, 667], #football
@@ -210,12 +212,16 @@ if __name__ == '__main__':
 		#sys.exit(-1)
 		model = load_model(config)
 		print(model.doc_embeddings().shape)
+
 		#print(model.input_embeddings().shape)
 		label2emb = dict()
 		for k in graph_builder.label2id:
 		    label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
 		else:
 		    print('Missing:',k)
+
+		embed()
+		exit()
 
 		model = load_model(config)
 		#doc_emb = load_doc_emb(config['doc_emb_path'])
@@ -237,6 +243,8 @@ if __name__ == '__main__':
 			hierarchy = simple_hierarchy()
 			label, all_siblings = target_hier_doc_assign(hierarchy, docs, label2emb, doc_embeddings, option='hard')
 			print(label, all_siblings)
+			embed()
+			exit()
 			# main_label, target_label, sibling_labels = target_doc_assign(concepts, docs, label_emb, doc_emb)
 			# main_set = set(map(lambda x:x[0], main_doc_assignment[main_label]))
 			# print(len(main_set))

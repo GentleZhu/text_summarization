@@ -605,6 +605,7 @@ class Concept:
         #print(list(map(lambda x:[self.normalize(p), self.normalize(x[0]), x[1]], self.links[p])))
         #linked_nodes.extend(map(lambda x:[self.normalize(p), self.normalize(p) if x[0] == self.root[0] else self.normalize(x[0]), x[1]], self.links[p]))
 
+
 def rank_hierarchies(hierarchy, option='A'):
     ranked_list = []
     for node in hierarchy.non_leaves:
@@ -656,6 +657,33 @@ def extract_phrases(target_docs, json_path='/shared/data/qiz3/text_summ/data/NYT
             #    ner_cnt[wid2t[surface2wid[n[0]]]] += 1
 
     return ner_cnt
+
+def load_embedding(folder):
+
+    ntypes = ['d', 'l', 'p']
+    embs = {}
+    e_size = 0
+
+    for n_type in ntypes:
+        embs[n_type] = {}
+        e_file = folder + n_type + '.vec'
+        e_cnt = 0
+        with open(e_file, 'r') as f:
+            first_line = True
+            for line in f:
+                if first_line:
+                    e_cnt, e_size = [int(w) for w in line.strip('\r\n').split(' ')]
+                    first_line = False
+                    continue
+                segs = line.strip('\r\n').split(' ')
+                n_name = segs[0]
+                n_emb = [float(w) for w in segs[1:-1]]
+                if len(n_emb) != e_size:
+                    print('Dimension length mismatch: ' + str(len(n_emb)))
+                    exit(1)
+                embs[n_type][n_name] = n_emb
+
+    return e_size, embs
 
 def background_assign(concept, t2wid, wid2surface, target_docs = None, json_path='/shared/data/qiz3/text_summ/data/NYT_sports.json'):
     wid2t = {t2wid[k]: k for k in t2wid}
@@ -710,7 +738,7 @@ def soft_assign_docs(doc_embeddings, label_embeddings):
         for label in label_embeddings:
             label_vec = label_embeddings[label]
             local_list.append((label, np.dot(vec, label_vec)))
-            #local_list.append((label, scipy.spatial.distance.cosine(vec, label_vec)))
+            #local_list.append((label, 1 - spatial.distance.cosine(vec, label_vec)))
         m = sorted(local_list, key=lambda t:t[1], reverse=True)[:3]
         doc_assignment.append(m)
         top_label_assignment[m[0][0]].append([idx, m[0][1]])
@@ -773,6 +801,7 @@ def target_hier_doc_assign(hierarchy, docs, label_embeddings, doc_embeddings, op
                 l = []
                 for idx, child in enumerate(children):
                     v_label = label_embeddings[child]
+                    #l.append((idx, max(0, np.dot(v_doc, v_label))))
                     l.append((idx, max(0, 1 - spatial.distance.cosine(v_doc, v_label))))
                 (id, sim) = max(l, key=lambda t: t[1])
                 freq[id] += 1
@@ -780,6 +809,7 @@ def target_hier_doc_assign(hierarchy, docs, label_embeddings, doc_embeddings, op
                 for idx, child in enumerate(children):
                     v_label = label_embeddings[child]
                     sim = max(0, 1 - spatial.distance.cosine(v_doc, v_label))
+                    #sim = max(0, np.dot(v_doc, v_label))
                     freq[idx] *= sim
         freq = [t / sum(freq) for t in freq]
         if num_c == 1:
