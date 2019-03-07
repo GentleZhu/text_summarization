@@ -2,7 +2,7 @@ import sys
 from tqdm import tqdm
 from data import SummDataset, KnowledgeEmbedDataset
 import torch.utils.data as tdata
-from model import KnowledgeD2V, KnowledgeSkipGram, KnowledgeEmbed
+from model import KnowledgeD2V, KnowledgeSkipGram, KnowledgeEmbed, KnowledgeFineTune
 from torch.optim import Adam, SparseAdam, SGD, Adagrad
 import torch as t
 import pickle
@@ -95,6 +95,7 @@ def Train(config, X, params):
 		hier_flag = False
 		if len(X) == 3:
 			hier_flag = True
+			print(X[2])
 			ll = t.LongTensor(X[2])
 			print('constrain shape', ll.shape)
 		train_loader = tdata.DataLoader(
@@ -126,3 +127,21 @@ def Train(config, X, params):
 				t.save(model.state_dict(), model_path)
 			print("Epoch:{}, Loss:{}".format(epoch, epoch_loss))
 			#break
+	elif config['method'] == 'finetune':
+		model = KnowledgeFineTune(params[0], t.Tensor(params[2]))
+		train_loader.DataLoader(tdata.TensorDataset(t.from_numpy(X[0]), t.from_numpy(X[1]), params[1]),
+			batch_size=config['batch_size'], shuffle=True, pin_memory=True)
+		t.cuda.set_device(int(config['gpu']))
+		optimizer = Adam(params=model.parameters(), lr=0.001)
+
+		model.cuda()
+
+		for epoch in range(config['epoch_number']):
+			epoch_loss = 0.0
+			for data,mask,label in tqdm(train_loader):
+				loss = model(data, mask, label, config['num_sample'])
+				epoch_loss += loss
+				model.zero_grad()
+				loss.backward()
+				optimizer.step()
+

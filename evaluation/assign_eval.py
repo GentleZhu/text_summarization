@@ -83,11 +83,15 @@ def cos_assign_docs(doc_embeddings, label_embeddings, gt_labels=None):
             label_vec = label_embeddings[label]
             local_list.append((label, np.dot(vec, label_vec)))
             #local_list.append((label, scipy.spatial.distance.cosine(vec, label_vec)))
-        m = max(local_list, key=lambda t:t[1])
+        #
+        #m = max(local_list, key=lambda t:t[1])
+        m = sorted(local_list, key=lambda t:t[1], reverse=True)[:3]
         #if idx > 10:
         #    break
         #print(local_list)
-        doc_assignment[m[0]].append((idx, m[1]))
+        
+        #doc_assignment[m[0]].append((idx, m[1]))
+        doc_assignment[m[0][0]].append([idx, m[0][1] - m[1][1]])
         per_doc_assignment[idx] = m[0]
     return doc_assignment, per_doc_assignment
 
@@ -112,7 +116,7 @@ def soft_assign_docs(doc_embeddings, label_embeddings):
         #print(local_list)
     return doc_assignment, top_label_assignment
 
-def evaluate_assignment(doc_assignment, gt_labels, k=100):
+def evaluate_assignment(doc_assignment, gt_labels, k=300):
     # Evaluate top-k precision
     # doc_assignment: dict, {'football':[0,1,3...], ...}
     # gt_labels: dict, {0: 'football', ...}
@@ -186,8 +190,8 @@ def load_label_emb(emb_path):
 
 if __name__ == '__main__':
     relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
-    config = {'batch_size': 128, 'epoch_number': 1, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
-        'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full', 'method':'KnowledgeEmbed', 'id':'feb01-hie-hinge',
+    config = {'batch_size': 128, 'epoch_number': 2, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
+        'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full_lead-3', 'method':'KnowledgeEmbed', 'id':'mar03-hie-nce-lr_0.001',
         'eval': True, 'relation_list':[]}
     #config = {'doc_emb_path': 'baselines/doc2cube/tmp/d.vec', 'dataset':'NYT_sports', 'method':'doc2cube', 
     #'label_emb_path':'baselines/doc2cube/tmp/l.vec'}
@@ -231,6 +235,7 @@ if __name__ == '__main__':
                     print('Missing:',k)
             
             doc_assignment,per_doc_assignment =  cos_assign_docs(model.doc_embeddings(), label2emb, gt_labels)
+        # Below is for doc2cube embeddings
         else:
             doc_embeddings = load_emb(config['doc_emb_path'])
             #print(doc_embeddings.shape)
@@ -239,7 +244,7 @@ if __name__ == '__main__':
             label2emb = load_label_emb(config['label_emb_path'])
             doc_assignment,per_doc_assignment =  cos_assign_docs(doc_embeddings, label2emb, gt_labels)
         prec = evaluate_assignment(doc_assignment, gt_labels)
-        evaluate_assignment_all(per_doc_assignment, gt_labels, gt_counts)
+        #evaluate_assignment_all(per_doc_assignment, gt_labels, gt_counts)
         print(prec)
     else:
         if config['method'] == 'KnowledgeEmbed':

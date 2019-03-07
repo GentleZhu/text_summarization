@@ -1,18 +1,19 @@
 [DEFAULT]
 batch_size = 128
-epoch_number = 10
+epoch_number = 20
 emb_size = 100
 kb_emb_size = 100
 num_sample = 5
-gpu = 3
+gpu = 2
 model_dir = /shared/data/qiz3/text_summ/src/model/
-dataset = NYT_example
+dataset = NYT_full_lead-3
 method = KnowledgeEmbed
-id = feb01-hie-nce-lr_0.001
+id = mar03-hie-nce-lr_0.001
 preprocess = True
 doc_emb_path = intermediate_data/pretrain_doc.emb
 label_emb_path = intermediate_data/pretrain_label.emb
 stage = train
+finetune = False
 summ_method = textrank
 topk = 100
 

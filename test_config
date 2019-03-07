@@ -8,11 +8,11 @@ gpu = 3
 model_dir = /shared/data/qiz3/text_summ/src/model/
 dataset = NYT_example
 method = KnowledgeEmbed
-id = feb01-hie-nce-lr_0.001
+id = feb21-hie-nce-lr_0.001
 preprocess = True
 doc_emb_path = intermediate_data/pretrain_doc.emb
 label_emb_path = intermediate_data/pretrain_label.emb
 stage = test
-summ_method = caseOLAP
+summ_method = textrank
 topk = 100
 

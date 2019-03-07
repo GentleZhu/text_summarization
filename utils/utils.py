@@ -14,6 +14,7 @@ import operator
 import math
 from scipy import spatial
 from nltk.tokenize import sent_tokenize, word_tokenize
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 class textGraph(object):
     """docstring for textGraph"""
@@ -63,6 +64,25 @@ class textGraph(object):
                     tmp[0] = str(self.id2name[int(tmp[0].lstrip('D:'))])
                 OUT.write(' '.join(tmp) + '\n')
 
+    def pad_sequences(self, padding_word=-1, pad_len=800):
+        if pad_len is not None:
+            sequence_length = pad_len
+        else:
+            sequence_length = max(len(x) for x in self.texts)
+        print("MAX sequence", sequence_length)
+        self.padded_sentences = []
+        self.sentence_mask = np.zeros((len(self.texts), sequence_length))
+
+        for sentence in self.texts:
+            num_padding = sequence_length - len(sentence)
+            if num_padding < 0:
+                new_sentence = sentence[:pad_len]
+            else:
+                new_sentence = sentence + [padding_word] * num_padding
+                self.sentence_mask[-num_padding:] = 1
+            self.padded_sentences.append(new_sentence)
+        return np.array(self.padded_sentences), self.sentence_mask
+
     # Normalize text
     def normalize_text(self):
         # Lower case
@@ -108,8 +128,8 @@ class textGraph(object):
     def text_to_numbers(self):
         # Initialize the returned data
         self.data = []
-        self.tuple_data = []
-        self.ll_data = []
+        self.l2p_data = []
+        self.l2l_data = []
         non_occur = 0
         for sentence in self.texts:
             sentence_data = []
@@ -122,15 +142,21 @@ class textGraph(object):
                 else:
                     non_occur += 1
                     word_ix = 0
-                
             self.data.append(sentence_data)
+            '''
+            seq = [ 0 for i in range(200)]
+            mask = [ 0 for i in range(200)]
+            count = collections.Counter(sentence_data).most_common(200)
+            for
+            ''' 
+
         print("Filtered_phrases in text:{}".format(non_occur))
         non_occur = 0
         for tup in self.tuples:
             word = tup[1]
             if word in self.name2id:
                 word_ix = self.name2id[word]
-                self.tuple_data.append([self.label2id[tup[0]], word_ix])
+                self.l2p_data.append([self.label2id[tup[0]], word_ix])
             else:
                 non_occur += 1
                 #print(len(self.name2id))
@@ -140,11 +166,11 @@ class textGraph(object):
             ll = []
             for _t in tup:
                 ll.append(self.label2id[_t])
-            self.ll_data.append(ll)
-        print(self.label_constraints, self.ll_data)
+            self.l2l_data.append(ll)
+        print("Label constraints introduced:", self.label_constraints, self.l2l_data)
         print("Filtered_phrases:{}".format(non_occur))
 
-    def load_corpus(self, corpusIn, jsonIn, relation_cat = None, reversed_hier = None, attn = False):
+    def load_corpus(self, corpusIn, jsonIn, relation_cat = None, reversed_hier = None, attn = False, indices_selected = None):
         cnt = 0
         ner_set = defaultdict(int)
         ner_types = set()
@@ -160,7 +186,13 @@ class textGraph(object):
                 #else:
                 #    d = self.Linker.expand(ner, 1)
                 #    self.tuples += d
-                self.texts.append(cline)
+                if not indices_selected:
+                    self.texts.append(cline)
+                elif cnt in indices_selected:
+                    self.texts.append(cline)
+                cnt += 1
+        print(len(self.texts))
+                    
         if attn:
             filtered = [(k, ner_set[k]) for k in ner_set if ner_set[k] > 0]
 
@@ -206,8 +238,8 @@ class textGraph(object):
         for idx,line in tqdm(enumerate(self.texts)):
             for concept in concepts:
                 self.tuples.extend(concept.link_corpus(line))
-            if idx == 167841:
-                print("Linked tuples of NYT Annotated Corpus is :{}".format(len(self.tuples)))
+            #if idx == 167841:
+            #    print("Linked tuples of NYT Annotated Corpus is :{}".format(len(self.tuples)))
         print("Linked tuples of NYT Annotated Corpus is :{}".format(len(self.tuples)))
         
         print("entity-linking done")
@@ -215,6 +247,7 @@ class textGraph(object):
         self.label_constraints = []
         for concept in concepts:
             self.label_constraints.extend(concept.output_concepts(tops))
+        print(self.label_constraints)
 
         #for concept in concepts:
         #    print(concept.output_concepts())
@@ -305,19 +338,19 @@ class textGraph(object):
             inputs += _data
             #outputs += labels
         #print(outputs[-1])
-        print("Training data stats: records {}, kb pairs {}".format(len(inputs), len(self.tuple_data)))
+        print("Training data stats: records {}, kb pairs {}".format(len(inputs), len(self.l2p_data)))
         if method == 'knowledge2vec':
-            for tup in self.tuple_data:
+            for tup in self.l2p_data:
                 inputs.append([tup[0]]*window_size + [tup[2] + len(self.data)])
                 outputs.append(tup[1])
         elif method == 'knowledge2skip_gram':
-            for tup in self.tuple_data:
+            for tup in self.l2p_data:
                 inputs.append([tup[0], tup[2] + len(self.data)])
                 outputs.append(tup[1])
-        np_data = [np.array(inputs), np.array(self.tuple_data), np.array(self.ll_data)]
+        np_data = [np.array(inputs), np.array(self.l2p_data), np.array(self.l2l_data)]
         #batch_data = np.array(inputs)
         #label_data = np.transpose(np.array([outputs]))
-        #print("Training data stats: records {}, kb pairs {}".format(batch_data.shape[0], len(self.tuple_data)))
+        #print("Training data stats: records {}, kb pairs {}".format(batch_data.shape[0], len(self.l2p_data)))
         return np_data, self.num_docs, self.num_words, self.num_labels
 
     def buildTrain_(self, num_sampled = 5):
@@ -549,7 +582,7 @@ class Concept:
             for p in set(self.seeds[k]):
                 candidates.append([p, self.count[p]])
             candidates.sort(key=lambda x:x[1], reverse=True)
-            for kw in candidates[:50]:
+            for kw in candidates[:5]:
                 if kw[0] in self.labels:
                     self.clean_links[kw[0]] = [kw[0]]
                 else:
@@ -640,6 +673,31 @@ def rank_hierarchies(hierarchy, option='A'):
                 score = 0
             ranked_list.append((node, relation, score))
     ranked_list = sorted(ranked_list, key=lambda t:-t[2])
+    return ranked_list
+
+# Used for tf-idf vectorizer.
+def tf_idf_vectorizer(in_file):
+    with open(in_file) as IN:
+        features = []
+        for line in IN:
+            line = line.strip('\n').split('\t')
+            doc_id, new_passage = int(line[0]), line[1].replace(';', ' ')
+            features.append(new_passage)
+    vectorizer = TfidfVectorizer()
+    feature_vectors = vectorizer.fit_transform(features)
+    return feature_vectors, vectorizer
+
+def search_nearest_doc(target_docs):
+    feature_vectors, vectorizer = tf_idf_vectorizer('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+    new_vectors = np.array(vectorizer.transform(target_docs).todense())
+    ranked_list = []
+    doc_num = feature_vectors.shape[0]
+    for i in tqdm(range(doc_num)):
+        tmp_v = []
+        for j in range(new_vectors.shape[0]):
+            tmp_v.append(1 - spatial.distance.cosine(new_vectors[j], feature_vectors[i].todense()))
+        ranked_list.append((i, np.mean(tmp_v)))
+    ranked_list = sorted(ranked_list, key=lambda t: -t[1])
     return ranked_list
 
 def extract_phrases(target_docs, json_path='/shared/data/qiz3/text_summ/data/NYT_sports.json'):
@@ -737,13 +795,19 @@ def soft_assign_docs(doc_embeddings, label_embeddings):
         local_list = []
         for label in label_embeddings:
             label_vec = label_embeddings[label]
-            local_list.append((label, np.dot(vec, label_vec)))
+            score_ = np.dot(vec, label_vec)
+            local_list.append((label, score_))
             #local_list.append((label, 1 - spatial.distance.cosine(vec, label_vec)))
+            
+
         m = sorted(local_list, key=lambda t:t[1], reverse=True)[:3]
+        #for mm in m:
+        #    top_label_assignment[mm[0]].append([idx, mm[1]])
         doc_assignment.append(m)
-        top_label_assignment[m[0][0]].append([idx, m[0][1]])
+        top_label_assignment[m[0][0]].append([idx, m[0][1] - m[1][1]])
     for key in top_label_assignment:
         top_label_assignment[key].sort(key=lambda x:x[1], reverse=True)
+        #top_label_assignment[key] = top_label_assignment[key][:100]
         #if idx > 10:
         #    break
         #print(local_list)

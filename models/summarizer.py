@@ -385,6 +385,56 @@ def contrastive_analysis(document_phrase_cnt, background_phrases, twin, target):
     ranked_list = sorted(ranked_list, key=lambda t: -t[1])
     return ranked_list, phrase_rescore
 
+def graph_optimization(target_candidates, background_candidates, phrase2idx, target_saliency, background_saliency,
+                       relevance_matrix):
+    num_concept = len(phrase2idx)
+    max_iter = 10
+    convergence_threshold = 0.01
+    gamma = 0.1
+    alpha = 1.0
+    concept_list = list(phrase2idx.keys())
+    f_doc_target = np.zeros(num_concept)
+    f_doc_bg = np.zeros(num_concept)
+    f_target = np.zeros(num_concept)
+    f_bg = np.zeros(num_concept)
+    y_target = np.zeros(num_concept)
+    y_bg = np.zeros(num_concept)
+    g_target = np.zeros(num_concept)
+    g_bg = np.zeros(num_concept)
+    for phrase in target_saliency:
+        g_target[phrase2idx[phrase]] = target_saliency[phrase]
+    for phrase in background_saliency:
+        g_bg[phrase2idx[phrase]] = target_saliency[phrase]
+
+    iter_outter = 0
+    obj = -1.0
+    obj_old = obj
+    while iter_outter < 5:
+        iter_inner = 0
+        while iter_inner < max_iter:
+            # Update f
+            f_target = np.dot(np.linalg.inv(alpha * np.eye(num_concept) - relevance_matrix), g_target)
+            f_bg = np.dot(np.linalg.inv(alpha * np.eye(num_concept) - relevance_matrix), g_bg)
+
+            obj_rel = 0.0
+            if obj_rel < convergence_threshold:
+                break
+
+        for i in range(num_concept):
+            f_doc_target[i] = math.log((f_target[i] + gamma) / (f_bg[i] + gamma))
+            f_doc_bg[i] = math.log((f_bg[i] + gamma) / (f_target[i] + gamma))
+        y_target_threshold = 0.0
+        y_bg_sup = len(background_candidates)
+        for phrase in background_candidates:
+            y_target_threshold += f_doc_bg[phrase2idx[phrase]] / y_bg_sup
+        y_bg_threshold = 0.0
+        y_target_sup = len(target_candidates)
+        for phrase in target_candidates:
+            y_bg_threshold += f_doc_target[phrase2idx[phrase]] / y_target_sup
+
+    chosen_phrases = []
+    return chosen_phrases
+
 def random_sample_sibling(siblings, k):
     # Randomly sample k docs for each sibling.
     new_siblings = []

@@ -282,75 +282,6 @@ Previous Sketch
             A[word_id]
 """
 
-
-# train by per record first
-# several different structure should be tried out:
-    # direct combine OR using reconstruction loss
-# for few shots learning
-class KnowledgeFineTune(nn.Module):
-    def __init__(self, num_words, num_docs, num_labels, embed_size, weights=None, relational_bias=None):
-        """
-        :param num_classes: An int. The number of possible classes.
-        :param embed_size: An int. EmbeddingLockup size
-        :param num_sampled: An int. The number of sampled from noise examples
-        :param weights: A list of non negative floats. Class weights. None if
-            using uniform sampling. The weights are calculated prior to
-            estimation and can be of any form, e.g equation (5) in [1]
-        """
-
-        super(KnowledgeD2V, self).__init__()
-
-        self.num_words = num_words
-        self.num_docs = num_docs
-        self.num_labels = num_labels
-        self.embed_size = embed_size
-
-        self.word_embed = nn.Embedding(self.num_words, self.embed_size, sparse=True)
-        self.word_embed.weight = Parameter(t.FloatTensor(self.num_words, self.embed_size).uniform_(-1, 1))
-
-        self.doc_embed = nn.Embedding(self.num_docs, self.embed_size, sparse=True)
-        self.doc_embed.weight = Parameter(t.FloatTensor(self.num_docs, self.embed_size).uniform_(-1, 1))
-
-        self.label_embed = nn.Embedding(self.num_docs, self.embed_size, sparse=True)
-        self.label_embed.weight = Parameter(t.FloatTensor(self.num_docs, self.embed_size).uniform_(-1, 1))
-        
-        self.attn = nn.Bilinear(embed_size, embed_size, embed_size, bias = False)
-
-        self.nce_loss = L.NCE_SIGMOID()
-        self.hinge_loss = L.NCE_HINGE()
-
-    def sample(self, num_sample):
-        """
-        draws a sample from classes based on weights
-        """
-        return t.multinomial(self.weights, num_sample, True)
-
-    def forward(self, input_labels, input_doc, out_labels, num_sampled, opt):
-        if use_cuda:
-            word_ids = input_labels.cuda()
-            doc_id = input_doc.cuda()
-            label_id = out_labels.cuda()
-
-        w = self.word_embed(word_ids)
-        scores = self.attn(w, self.doc_embed(doc_id))
-        weights = F.softmax(scores)
-        output_doc = weights.unsqueeze(1).bmm(x).squeeze(1)
-        
-        noise = Variable(t.Tensor(num_sampled).uniform_(0, self.num_docs - 1).long())
-        x = t.cat((output_doc, self.doc_embed(noise)))
-
-        scores = t.mm(x, self.label_embed(label_id).transpose())
-        
-        loss = F.relu(scores[1:] - scores[0] + 1)
-
-        return 
-
-    def input_embeddings(self):
-        return self.word_embed.weight.data.cpu().numpy()
-
-    def doc_embeddings(self):
-        return self.doc_embed.weight.data.cpu().numpy()
-
 class KnowledgeEmbed(nn.Module):
     def __init__(self, num_words, num_docs, num_labels, embed_size, knowledge=False):
         """
@@ -439,6 +370,50 @@ class KnowledgeEmbed(nn.Module):
 
     def doc_embeddings(self):
         return self.doc_embed.weight.data.cpu().numpy()
+
+# train by per record first
+# several different structure should be tried out:
+    # direct combine OR using reconstruction loss
+# for few shots learning
+class KnowledgeFineTune(nn.Module):
+    def __init__(self, embed_model, labels):
+        """
+        :param num_classes: An int. The number of possible classes.
+        :param embed_size: An int. EmbeddingLockup size
+        :param num_sampled: An int. The number of sampled from noise examples
+        :param weights: A list of non negative floats. Class weights. None if
+            using uniform sampling. The weights are calculated prior to
+            estimation and can be of any form, e.g equation (5) in [1]
+        """
+
+        super(KnowledgeFineTune, self).__init__()
+
+        self.num_words = embed_model.num_words
+        self.num_docs = embed_model.num_docs
+        self.num_labels = embed_model.num_labels
+        self.embed_size = embed_model.embed_size
+        self.labels = labels
+        self.word_embed = embed_model.word_embed
+
+        #self.doc_embed = nn.Embedding(self.num_docs, self.embed_size, sparse=True)
+        #self.doc_embed.weight = Parameter(t.FloatTensor(self.num_docs, self.embed_size).uniform_(-1, 1))
+
+        self.label_embed = embed_model.label_embed
+        
+        self.attn = nn.Bilinear(self.embed_size, self.embed_size, self.embed_size, bias = False)
+        self.loss = nn.CrossEntropyLoss()
+
+
+    def forward(self, input_seqs, out_labels, num_sampled, opt):
+        if use_cuda:
+            word_ids = input_seqs.cuda()
+
+        w = self.word_embed(word_ids)
+        scores = self.attn(w, self.label_embed(self.labels))
+        scores.data.masked_fill_(x_mask.data, -float('inf'))
+        weights = F.softmax(scores)
+        output_doc = weights.unsqueeze(1).bmm(x).squeeze(1)
+        return self.loss(output_doc, output_labels)
 
 class GCN(nn.Module):
     def __init__(self, nfeat, nhid, nclass, dropout):

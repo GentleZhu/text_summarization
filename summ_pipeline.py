@@ -12,25 +12,6 @@ from summarizer import textrank, ensembleSumm, seedRanker, GCNRanker
 from models.model import KnowledgeEmbed
 import configparser
 
-duc_set = ['d30048t', 'd30049t', 'd30050t', 'd30051t', 'd30053t', 'd30055t', 'd30056t', 'd30059t', 'd31001t',
-           'd31008t', 'd31009t', 'd31013t', 'd31022t', 'd31026t', 'd31031t', 'd31032t', 'd31033t', 'd31038t',
-           'd31043t', 'd31050t']
-
-#relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
-# relation_list1: hop=1, relation_list2: hop>1
-relation_cat, reversed_hier, relation_list1 = generate_relations()
-#relation_list1= ['P85', 'P86', 'P87', 'P162', 'P175', 'P264', 'P358', 'P406', 'P412', 'P434', 'P658', 'P676', 'P870', 'P942', 'P1191', 'P1303']
-relation_list1 = ['P641']
-relation_list2 = ['P31']#, 'P279', 'P361']
-
-#config['method'] = 'knowledge2skip_gram'
-#config['dataset'] = 'NYT_sports'
-
-#id:0 all information
-#id:1 simple label
-
-#P54 team P31 instance of P27 nationality P641 sports P413 position
-#P106 occupation P1344 participant P17 country P69 educate P279 subclass of P463 member of P641 sport
 def load_gt_labels(label_path):
     target_domain = []
     candidates = {'College Football': 'type_of_sport|football', 'Pro Football': 'type_of_sport|football', 'Pro Basketball': 'type_of_sport|basketball',
@@ -56,6 +37,8 @@ def load_model(config):
     num_docs = save_point['num_docs']
     num_words = save_point['num_words']
     num_labels = save_point['num_labels']
+    
+
     #num_labels = 29
 
     model = KnowledgeEmbed(num_words=num_words, num_docs=num_docs, num_labels=num_labels, embed_size=config['emb_size'])
@@ -68,6 +51,9 @@ def load_model(config):
     tmp = torch.load(model_path, map_location=lambda storage, loc: storage)
     model.load_state_dict(tmp, False)
     model.cuda()
+    #if config['finetune'] == 'True':
+    #	return model, save_point['seq'], save_point['seq_mask']
+    #else:
     return model
 
 def load_config(file_path):
@@ -109,6 +95,10 @@ if __name__ == '__main__':
 				concept = Concept(h_)
 				concept.construct_concepts(con_config, True)
 				concepts.append(concept)
+			#print(concepts[0].links)
+			del concepts[0].links['military']
+			#concepts[0].links['military'] = ['military_']
+			#concepts[0].links['military_'] = ['politics']
 
 			concept = Concept(h)
 			concept.construct_concepts([(u'Science', 2), 2])
@@ -136,12 +126,14 @@ if __name__ == '__main__':
 			graph_builder.load_corpus(text_path, json_path, attn=False)
 			graph_builder.normalize_text()
 			graph_builder.load_concepts(concepts)
-			#sys.exit(-1)
 			print(graph_builder.label2id)
+			sys.exit(-1)
 			graph_builder.build_dictionary()
 			graph_builder.text_to_numbers()
 			X, num_docs, num_words, num_labels = graph_builder.buildTrain(method=config['method'])
+			
 			save_point = {'X': X, 'num_labels':num_labels, 'num_docs':num_docs, 'num_words':num_words}
+			
 			graph_builder.dump_mapping("{}_mapping.txt".format(config['dataset']))
 			graph_builder.dump_label("{}_label.p".format(config['dataset']))
 			pickle.dump(save_point, open("{}_{}.p".format(config['method'], config['dataset']), 'wb'))
@@ -152,32 +144,36 @@ if __name__ == '__main__':
 			num_docs = save_point['num_docs']
 			num_words = save_point['num_words']
 			num_labels = save_point['num_labels']
+			print(num_docs, num_words, num_labels)
 
 		print("Training Embedding")
 		embedder.Train(config, X, [num_words, num_docs, num_labels])
 	elif config['stage'] == 'examine':
-		twin = 'astronomy'
-		siblings = {'geology': 0, 'physics': 2, 'chemistry': 3, 'biology': 4, 'maths': 5, 'astronomy': 6}.keys()
+		# this block is for iteratively training and finetune part 
+		
 		graph_builder = textGraph()
 		graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
 		graph_builder.load_label("{}_label.p".format(config['dataset']))
+		twin = 'stocks_and_bonds'
 
+		siblings = {'manufacturing_': 6, 'business': 7, 'economy_': 8, 'trade_': 9, 'stocks_and_bonds': 10}
 		print(graph_builder.label2id)
 		#sys.exit(-1)
 		model = load_model(config)
 		print(model.doc_embeddings().shape)
 		#print(model.input_embeddings().shape)
 		label2emb = dict()
+		
 		for k in graph_builder.label2id:
+		#for k in siblings:
 		    label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
-		else:
-		    print('Missing:',k)
 
 		doc_assignment,top_label_assignment = soft_assign_docs(model.doc_embeddings(), label2emb)
 		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
-		docs = [x[0] for x in top_label_assignment[twin][:100]]
+		docs = [x[0] for x in top_label_assignment[twin][:30]]
 		siblings_docs = []
-		for key in siblings:
+
+		for key in siblings.keys():
 			if key != twin:
 				siblings_docs.append([x[0] for x in top_label_assignment[key][:100]])
 		phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
@@ -187,8 +183,6 @@ if __name__ == '__main__':
 	# Find concentrated concepts and specific common sense node
 		print("Loading Embedding")
 		#Sports Test Documents
-		embed()
-		exit()
 		set_docs = [
 		#list(range(167854, 167866)),
 		[15873, 42243, 98051, 101637, 61064, 56336, 42131, 74261, 42524, 30749, 44702, 46761, 61489, 61629, 160829, 7487, 105669, 75085, 36304, 55646, 95585, 750, 23665, 148730, 112379, 10367], #dark matter
@@ -202,7 +196,7 @@ if __name__ == '__main__':
 		[99, 2323, 14379, 4422, 4573, 5148, 292, 1322, 6811, 6654, 382] #baseball
 		]
 		
-		#set_docs = [list(range(167842 + 10 * i, 167852 + 10 * i)) for i in range(20)]
+		set_docs = [list(range(167844 + 10 * i, 167855 + 10 * i)) for i in range(2)]
 
 		graph_builder = textGraph(None)
 		graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
@@ -220,8 +214,6 @@ if __name__ == '__main__':
 		else:
 		    print('Missing:',k)
 
-		embed()
-		exit()
 
 		model = load_model(config)
 		#doc_emb = load_doc_emb(config['doc_emb_path'])
@@ -235,6 +227,7 @@ if __name__ == '__main__':
 		phrase_scores = {}
 
 		for idx,docs in enumerate(set_docs):
+			print(docs)
 			OUT = open("intermediate_data/{}_{}_set{}.txt".format(config['summ_method'], config['dataset'], idx), 'w')
 			FILELIST.write("intermediate_data/{}_{}_set{}.txt\n".format(config['summ_method'], config['dataset'], idx))
 
@@ -243,8 +236,6 @@ if __name__ == '__main__':
 			hierarchy = simple_hierarchy()
 			label, all_siblings = target_hier_doc_assign(hierarchy, docs, label2emb, doc_embeddings, option='hard')
 			print(label, all_siblings)
-			embed()
-			exit()
 			# main_label, target_label, sibling_labels = target_doc_assign(concepts, docs, label_emb, doc_emb)
 			# main_set = set(map(lambda x:x[0], main_doc_assignment[main_label]))
 			# print(len(main_set))
@@ -302,8 +293,8 @@ if __name__ == '__main__':
 				scores = textrank(phrase2idx.keys(), similarity_scores)
 				ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
 				ranked_list = sorted(ranked_list, key=lambda t:-t[1])
-
-				phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
+				embed()
+				#phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
 
 			elif config['summ_method'] == 'kams':
 
@@ -396,7 +387,51 @@ if __name__ == '__main__':
 				OUT.write("{} {}\n".format(r[0], r[1]))
 
 			
-			break
-		pickle.dump(phrase_scores, open('baselines/sentence_summ/phrase_scores.p', 'wb'))
+			#break
+
+		#pickle.dump(phrase_scores, open('baselines/sentence_summ/phrase_scores.p', 'wb'))
 	elif config['stage'] == 'finetune':
-		pass
+		if config['preprocess']:
+			model = load_model(config)
+			text_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.txt'.format(config['dataset'])
+			json_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.json'.format(config['dataset'])
+			
+			
+			graph_builder = textGraph()
+			graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+			graph_builder.load_label("{}_label.p".format(config['dataset']))
+
+			labels = {'physics': 19, 'chemistry': 20, 'astronomy': 21, 'geology': 23, 'biology': 24}
+			
+			label2emb = dict()
+			for k in labels:
+				if k in graph_builder.label2id:
+					label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
+				else:
+					print('Missing:',k)
+			doc_assignment,top_label_assignment = soft_assign_docs(model.doc_embeddings(), label2emb)
+
+			topk = 500
+			classes = list(labels.keys())
+			training_data, docs = [], []
+			for k in labels:
+				label2emb[k] = model.label_embed.weight[labels[k], :].data.cpu().numpy() 
+				for _id, score in sorted(top_label_assignment[k])[:topk]:
+					training_data.append([classes.index(k), len(docs)])
+					docs.append(_id)
+
+			print(len(docs), docs[0])
+			graph_builder.load_corpus(text_path, json_path, attn=False, indices_selected = docs)
+			graph_builder.normalize_text()
+			save_point = {}
+			seq, seq_mask = graph_builder.pad_sequences()
+			save_point['seq'], save_point['seq_mask'] = seq, seq_mask
+			save_point['training_data'] = training_data
+			save_point['labels'] = list(labels.values())
+			pickle.dump(save_point, open("{}_{}_finetune.p".format(config['method'], config['dataset']), 'wb'))
+		else:
+			model = load_model(config)
+			save_point = pickle.load(open("{}_{}_finetune.p".format(config['method'], config['dataset']), 'rb'))
+		embedder.Train(config, [save_point['seq'], save_point['seq_mask']], [model, save_point['training_data'], save_point['labels']])
+		#labels.values()
+		#for 
