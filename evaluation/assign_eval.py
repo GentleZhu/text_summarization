@@ -190,7 +190,7 @@ def load_label_emb(emb_path):
 
 if __name__ == '__main__':
     relation_list=['P54', 'P31', 'P27', 'P641', 'P413', 'P106', 'P1344', 'P17', 'P69', 'P279', 'P463', 'P641']
-    config = {'batch_size': 128, 'epoch_number': 2, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
+    config = {'batch_size': 128, 'epoch_number': 1, 'emb_size': 100, 'kb_emb_size': 100, 'num_sample': 5, 'gpu':2,
         'model_dir':'/shared/data/qiz3/text_summ/src/model/', 'dataset':'NYT_full_lead-3', 'method':'KnowledgeEmbed', 'id':'mar03-hie-nce-lr_0.001',
         'eval': True, 'relation_list':[]}
     #config = {'doc_emb_path': 'baselines/doc2cube/tmp/d.vec', 'dataset':'NYT_sports', 'method':'doc2cube', 
@@ -235,6 +235,8 @@ if __name__ == '__main__':
                     print('Missing:',k)
             
             doc_assignment,per_doc_assignment =  cos_assign_docs(model.doc_embeddings(), label2emb, gt_labels)
+            for k in doc_assignment:
+                print(k, len(doc_assignment[k]))
         # Below is for doc2cube embeddings
         else:
             doc_embeddings = load_emb(config['doc_emb_path'])

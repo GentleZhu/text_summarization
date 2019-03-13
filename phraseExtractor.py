@@ -51,17 +51,17 @@ class phraseExtractor:
         return s
 
     def _calculate_max_df(self, sibling_group):
-        print('Collecting group entities...')
+        #print('Collecting group entities...')
         entities = set()
-        for doc_id in tqdm(sibling_group):
+        for doc_id in sibling_group:
             entities |= set(self.document_phrase_cnt[doc_id].keys())
         max_df = -1
-        print('Done. Calculating max df...')
-        for entity in tqdm(entities):
+        #print('Done. Calculating max df...')
+        for entity in entities:
             df = sum([1 if doc_id in self.inverted_index[entity] else 0 for doc_id in sibling_group])
             if df > max_df:
                 max_df = df
-        print('Done.')
+        #print('Done.')
         return max_df
 
     def load_freq_data(self, document_phrase_cnt, inverted_index):
@@ -135,8 +135,8 @@ class phraseExtractor:
         self._calculate_sibling_max_df()
         if score_option in ['D', 'E', 'F', 'H']:
             self.read_int('/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/AutoPhrase.txt')
-        print('Start calculating scores...')
-        for entity in tqdm(self.entity_candidates):
+        #print('Start calculating scores...')
+        for entity in self.entity_candidates:
             if score_option == 'G':
                 score = math.log(len(document_phrase_cnt)) / math.log(1 + len(inverted_index[entity])) * self.entity2freq[entity]
                 #if '_' not in entity:

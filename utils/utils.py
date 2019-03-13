@@ -14,7 +14,6 @@ import operator
 import math
 from scipy import spatial
 from nltk.tokenize import sent_tokenize, word_tokenize
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 class textGraph(object):
     """docstring for textGraph"""
@@ -27,6 +26,7 @@ class textGraph(object):
         self.tuples = []
         self.label2id = dict()
         self.texts = []
+        self.skip_doc = set()
 		#self.name2type = dict()
 
     def load_stopwords(self, in_file):
@@ -50,6 +50,12 @@ class textGraph(object):
     def dump_label(self, output_file):
         pickle.dump(self.label2id, open(output_file, 'wb'))
 
+    def dump_linked_ids(self, output_file):
+        pickle.dump(self.skip_doc, open(output_file, 'wb'))
+
+    def load_linked_ids(self, input_file):
+        self.skip_doc = pickle.load(open(input_file, 'rb'))
+
     def load_label(self, input_file):
         self.label2id = pickle.load(open(input_file, 'rb'))
 
@@ -64,24 +70,31 @@ class textGraph(object):
                     tmp[0] = str(self.id2name[int(tmp[0].lstrip('D:'))])
                 OUT.write(' '.join(tmp) + '\n')
 
-    def pad_sequences(self, padding_word=-1, pad_len=800):
+    def pad_sequences(self, padding_word=0, pad_len=800):
         if pad_len is not None:
             sequence_length = pad_len
         else:
             sequence_length = max(len(x) for x in self.texts)
         print("MAX sequence", sequence_length)
-        self.padded_sentences = []
-        self.sentence_mask = np.zeros((len(self.texts), sequence_length))
-
-        for sentence in self.texts:
+        self.padded_sentences = np.zeros((len(self.texts), sequence_length), dtype=np.int32)
+        self.sentence_mask = np.zeros((len(self.texts), sequence_length), dtype=np.int16)
+        non_occur = 0
+        for sent_id, sentence in enumerate(self.texts):
             num_padding = sequence_length - len(sentence)
-            if num_padding < 0:
-                new_sentence = sentence[:pad_len]
-            else:
-                new_sentence = sentence + [padding_word] * num_padding
-                self.sentence_mask[-num_padding:] = 1
-            self.padded_sentences.append(new_sentence)
-        return np.array(self.padded_sentences), self.sentence_mask
+            # 0 is for UNK
+            for idx,word in enumerate(sentence):
+                if idx >= pad_len:
+                    break
+                if word in self.name2id:
+                    word_ix = self.name2id[word]
+                    self.padded_sentences[sent_id, idx] = word_ix
+                else:
+                    non_occur += 1
+                    self.sentence_mask[sent_id, idx] = 1
+            if num_padding > 0:
+                self.sentence_mask[sent_id, len(sentence):] = 1
+        print('non_occur:', non_occur)
+        return self.padded_sentences, self.sentence_mask
 
     # Normalize text
     def normalize_text(self):
@@ -113,6 +126,8 @@ class textGraph(object):
         # Now add most frequent words, limited to the N-most frequent (N=vocabulary size)
         #count.extend(collections.Counter(words).most_common(vocabulary_size-1))
         count.extend(collections.Counter(words).most_common(vocabulary_size-1))
+
+        self.name2id['<PAD>'] = 0
         # Now create the dictionary
         # For each word, that we want in the dictionary, add it, then make it
         # the value of the prior dictionary length
@@ -131,7 +146,7 @@ class textGraph(object):
         self.l2p_data = []
         self.l2l_data = []
         non_occur = 0
-        for sentence in self.texts:
+        for idx,sentence in enumerate(self.texts):
             sentence_data = []
             # For each word, either use selected index or rare word index
             # Filter out rare words
@@ -162,55 +177,34 @@ class textGraph(object):
                 #print(len(self.name2id))
                 #assert True == False
                 word_ix = 0
-        for tup in self.label_constraints:
-            ll = []
-            for _t in tup:
-                ll.append(self.label2id[_t])
-            self.l2l_data.append(ll)
-        print("Label constraints introduced:", self.label_constraints, self.l2l_data)
-        print("Filtered_phrases:{}".format(non_occur))
+        #pre-train mode
+        if self.label_constraints:
+            for tup in self.label_constraints:
+                ll = []
+                for _t in tup:
+                    ll.append(self.label2id[_t])
+                self.l2l_data.append(ll)
+            #print("Label constraints introduced:", self.label_constraints, self.l2l_data)
+            print("Filtered_phrases:{}".format(non_occur))
 
-    def load_corpus(self, corpusIn, jsonIn, relation_cat = None, reversed_hier = None, attn = False, indices_selected = None):
+    def load_corpus(self, corpusIn, indices_selected = None):
         cnt = 0
-        ner_set = defaultdict(int)
-        ner_types = set()
-        with open(corpusIn) as IN, open(jsonIn) as JSON:
-            for cline, jline in tqdm(list(zip(IN.readlines(), JSON.readlines()))):
-                if attn:
-                    ner = json.loads(jline)['phrases']
-                    for n in ner:
-                        #ner_types.add(n[-1])
-                        #if n[-1] in ['ORDINAL', 'CARDINAL']:
-                        #    continue
-                        ner_set[n] += 1
-                #else:
-                #    d = self.Linker.expand(ner, 1)
-                #    self.tuples += d
+        
+        with open(corpusIn) as IN:
+            for cline in tqdm(IN.readlines()):
                 if not indices_selected:
                     self.texts.append(cline)
                 elif cnt in indices_selected:
                     self.texts.append(cline)
                 cnt += 1
-        print(len(self.texts))
-                    
-        if attn:
-            filtered = [(k, ner_set[k]) for k in ner_set if ner_set[k] > 0]
 
-            d, t2wid, wid2surface = self.Linker.expand([t[0] for t in filtered], 1)
-
-            stats = defaultdict(int)
-            for dd in d:
-                stats[(dd[1],dd[2])] += 1
-            stats = stats.items()
-            hierarchy = Hierarchy(d, relation_cat, reversed_hier)
         #print(sorted(stats, key = lambda x:x[1], reverse = True))
         self.num_docs = len(self.texts)
 
-        if attn:
-            return hierarchy, t2wid, wid2surface
 
-    def load_concepts(self, concepts, tops = ['politics', 'business', 'disaster', 'science', 'type_of_sport']):
+    def load_concepts(self, concepts, tops = ['politics', 'business', 'disaster', 'science', 'type_of_sport'], skip_option = False, expan=False):
         
+        concept_keywords = defaultdict(list)
         for concept in concepts:
             for l in concept.labels:
                 if l not in self.label2id:
@@ -223,35 +217,53 @@ class textGraph(object):
                         self.label2id[v] = len(self.label2id)
                         '''
         self.num_labels = len(self.label2id)
-        for line in tqdm(self.texts):
-            for concept in concepts:
-                #concept.link_corpus(tokens)
-            #break
-                concept._link_corpus(line)
-                #self.tuples.extend(concept.link_corpus(line, idx))
-            #break
-        print("pre-linking done")
-        for concept in concepts:
-            concept.count_seeds()
-            print(concept.clean_links)
+        if not expan:
+            for line in tqdm(self.texts):
+                for concept in concepts:
+                    #concept.link_corpus(tokens)
+                #break
+                    concept._link_corpus(line)
+                    #self.tuples.extend(concept.link_corpus(line, idx))
+                #break
+            print("pre-linking done")
 
-        for idx,line in tqdm(enumerate(self.texts)):
             for concept in concepts:
-                self.tuples.extend(concept.link_corpus(line))
+                concept.count_seeds()
+                for x in concept.clean_links:
+                    concept_keywords[concept.clean_links[x]].append(x)
+                #print(concept.clean_links)
+
+        num_linked_docs = 0
+        
+        for idx,line in tqdm(enumerate(self.texts)):
+            sent_links = 0
+            for concept in concepts:
+                tmp = concept.link_corpus(line)
+                
+                if len(tmp) > 0:
+                    sent_links += len(tmp)
+                    self.tuples.extend(tmp)
+                    
+            if skip_option and sent_links == 0:
+                self.skip_doc.add(idx)
+            else:
+                num_linked_docs += 1
+
             #if idx == 167841:
             #    print("Linked tuples of NYT Annotated Corpus is :{}".format(len(self.tuples)))
-        print("Linked tuples of NYT Annotated Corpus is :{}".format(len(self.tuples)))
+        print("Linked corpus is: {}, tuples of NYT Annotated Corpus is :{}".format(num_linked_docs, len(self.tuples)))
         
         print("entity-linking done")
 
         self.label_constraints = []
         for concept in concepts:
             self.label_constraints.extend(concept.output_concepts(tops))
-        print(self.label_constraints)
+        #print(self.label_constraints)
 
         #for concept in concepts:
         #    print(concept.output_concepts())
         #print(self.tuples)
+        return concept_keywords
     
     def calculate_DIH(self, a, b, concept):
         w_a, w_b = 0,0
@@ -303,6 +315,8 @@ class textGraph(object):
         #assert len(self.data) == len(self.kws)
         inputs, outputs = [], []
         for idx, sent in enumerate(self.data):
+            if idx in self.skip_doc:
+                continue
             if method == 'doc2vec' or method == 'knowledge2vec':
                 batch_and_labels = [(sent[i:i+window_size], sent[i+window_size]) for i in range(0, len(sent)-window_size)]
                 #print(batch_and_labels)
@@ -517,7 +531,7 @@ class Concept:
     def __init__(self, hierarchy):
         self.hierarchy = hierarchy
         self.links = defaultdict(list)
-        self.clean_links = defaultdict(list)
+        self.clean_links = defaultdict(str)
         self.labels = []
         self.count = defaultdict(int)
         self.seeds = defaultdict(list)
@@ -582,11 +596,11 @@ class Concept:
             for p in set(self.seeds[k]):
                 candidates.append([p, self.count[p]])
             candidates.sort(key=lambda x:x[1], reverse=True)
-            for kw in candidates[:5]:
+            for kw in candidates[:3]:
                 if kw[0] in self.labels:
-                    self.clean_links[kw[0]] = [kw[0]]
+                    self.clean_links[kw[0]] = kw[0]
                 else:
-                    self.clean_links[kw[0]] = self.links[kw[0]]
+                    self.clean_links[kw[0]] = self.links[kw[0]][0]
         for kw in self.labels:
             if kw in self.links:
                 self.output_tuple.append([kw, self.links[kw][0]])
@@ -609,8 +623,15 @@ class Concept:
         phrase_set = set(phrases)
         for p in phrase_set:
             if p in self.clean_links:
-                linked_nodes.append([self.clean_links[p][0], p])
+                linked_nodes.append([self.clean_links[p], p])
         return linked_nodes
+
+    def clean_concept(self):
+        del self.count
+        del self.seeds
+        del self.links
+        #del self.labels
+        del self.hierarchy
 
     def _link_corpus(self, phrases):
         #print(self.links)
@@ -673,31 +694,6 @@ def rank_hierarchies(hierarchy, option='A'):
                 score = 0
             ranked_list.append((node, relation, score))
     ranked_list = sorted(ranked_list, key=lambda t:-t[2])
-    return ranked_list
-
-# Used for tf-idf vectorizer.
-def tf_idf_vectorizer(in_file):
-    with open(in_file) as IN:
-        features = []
-        for line in IN:
-            line = line.strip('\n').split('\t')
-            doc_id, new_passage = int(line[0]), line[1].replace(';', ' ')
-            features.append(new_passage)
-    vectorizer = TfidfVectorizer()
-    feature_vectors = vectorizer.fit_transform(features)
-    return feature_vectors, vectorizer
-
-def search_nearest_doc(target_docs):
-    feature_vectors, vectorizer = tf_idf_vectorizer('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
-    new_vectors = np.array(vectorizer.transform(target_docs).todense())
-    ranked_list = []
-    doc_num = feature_vectors.shape[0]
-    for i in tqdm(range(doc_num)):
-        tmp_v = []
-        for j in range(new_vectors.shape[0]):
-            tmp_v.append(1 - spatial.distance.cosine(new_vectors[j], feature_vectors[i].todense()))
-        ranked_list.append((i, np.mean(tmp_v)))
-    ranked_list = sorted(ranked_list, key=lambda t: -t[1])
     return ranked_list
 
 def extract_phrases(target_docs, json_path='/shared/data/qiz3/text_summ/data/NYT_sports.json'):
@@ -784,13 +780,15 @@ def load_label_emb(emb_path):
             output[tmp[0]] = np.asarray(list(map(float, tmp[1:])))
         return output
 
-def soft_assign_docs(doc_embeddings, label_embeddings):
+def soft_assign_docs(doc_embeddings, label_embeddings, skip_docs = None):
     # Use cosine similarity to assign docs to labels
     # doc_embeddings: 2-d numpy array
     # label_embeddings: dict. {'football': vec, ...}
-    doc_assignment = []
+    doc_assignment = {}
     top_label_assignment = defaultdict(list)
     for idx in range(doc_embeddings.shape[0]):
+        if skip_docs and idx in skip_docs:
+            continue
         vec = doc_embeddings[idx]
         local_list = []
         for label in label_embeddings:
@@ -803,7 +801,7 @@ def soft_assign_docs(doc_embeddings, label_embeddings):
         m = sorted(local_list, key=lambda t:t[1], reverse=True)[:3]
         #for mm in m:
         #    top_label_assignment[mm[0]].append([idx, mm[1]])
-        doc_assignment.append(m)
+        doc_assignment[idx] = m[0][0]
         top_label_assignment[m[0][0]].append([idx, m[0][1] - m[1][1]])
     for key in top_label_assignment:
         top_label_assignment[key].sort(key=lambda x:x[1], reverse=True)
@@ -890,17 +888,16 @@ def target_hier_doc_assign(hierarchy, docs, label_embeddings, doc_embeddings, op
 
 def simple_hierarchy():
     hierarchy = {}
-    hierarchy['root'] = ['science', 'type_of_sport', 'politics', 'business', 'disaster']
+    #hierarchy['root'] = ['science', 'type_of_sport', 'politics', 'business', 'disaster']
     #hierarchy['root'] = ['science']
     #hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry', 'maths']
-    hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry']
-    #hierarchy['type_of_sport'] = ['swimming', 'figure_skating', 'cycle_sport', 'ice_hockey', 'auto_racing',
-    #                              'chess', 'american_football', 'cricket', 'athletics', 'alpine_skiing',
-    #                              'basketball', 'tennis', 'association_football', 'golf', 'baseball']
-    hierarchy['type_of_sport'] = ['american_football', 'ice_hockey', 'association_football', 'golf', 'basketball', 'baseball', 'tennis']
     hierarchy['politics'] = ['gay_right', 'immigration_', 'law_', 'election_', 'gun_control_', ]
     hierarchy['business'] = ['economy_', 'trade_', 'manufacturing_', 'stocks_and_bonds', ]
     hierarchy['disaster'] = ['flood_', 'earthquake_', 'drought_', 'human_caused', 'hurricane_', 'wildfire_']
+    hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry']
+    hierarchy['type_of_sport'] = ['american_football', 'ice_hockey', 'association_football', 'golf', 'basketball', 'baseball', 'tennis']
+    
+    
     return hierarchy
 
 def target_doc_assign(concepts, docs, label_embeddings, doc_embeddings):

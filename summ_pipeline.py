@@ -1,4 +1,4 @@
-import sys
+import sys, subprocess, re
 from utils.WikidataLinker_mg import WikidataLinker
 from tqdm import tqdm
 from utils.utils import *
@@ -6,30 +6,24 @@ import pickle, torch
 from phraseExtractor import phraseExtractor
 sys.path.append('./models/')
 import embedder
-import sys
+from sklearn.feature_extraction.text import TfidfVectorizer
 from summarizer import collect_statistics, build_in_domain_dict, generate_caseOLAP_scores, build_co_occurrence_matrix
-from summarizer import textrank, ensembleSumm, seedRanker, GCNRanker
+import summarizer
 from models.model import KnowledgeEmbed
 import configparser
+import torch as t
 
-def load_gt_labels(label_path):
-    target_domain = []
-    candidates = {'College Football': 'type_of_sport|football', 'Pro Football': 'type_of_sport|football', 'Pro Basketball': 'type_of_sport|basketball',
-                  'Basketball': 'type_of_sport|basketball', 'Hockey': 'type_of_sport|hockey', 'Golf': 'type_of_sport|golf', 'College Basketball': 'type_of_sport|basketball',
-                  'Tennis': 'type_of_sport|tennis', 'Soccer': 'type_of_sport|soccer', 'Baseball': 'type_of_sport|baseball'}             
-    counts = defaultdict(int)
-    cnt = 0
-    with open(label_path) as IN:
-        for idx, line in enumerate(IN):
-            obj = json.loads(line)
-            for l in obj['type']:
-            	if l.split('/')[-1] in candidates:
-                	target_domain.append(idx)
-                	continue
-                
-    #print("Ground Truth Counts:", counts)
-    #print(labels)
-    return target_domain
+# Used for tf-idf vectorizer.
+def tf_idf_vectorizer(in_file):
+    with open(in_file) as IN:
+        features = []
+        for line in IN:
+            line = line.strip('\n').split('\t')
+            doc_id, new_passage = int(line[0]), line[1].replace(';', ' ')
+            features.append(new_passage)
+    vectorizer = TfidfVectorizer()
+    feature_vectors = vectorizer.fit_transform(features)
+    return feature_vectors, vectorizer
 
 def load_model(config):
 
@@ -55,6 +49,16 @@ def load_model(config):
     #	return model, save_point['seq'], save_point['seq_mask']
     #else:
     return model
+
+def expand(label_emb, model, name2id, ranked_list):
+	results = []
+	for term in ranked_list:
+		if term[0] not in name2id:
+			print(term[0] + 'not in dic')
+			continue
+		results.append([term[0], np.dot(label_emb, model.word_embed.weight[name2id[term[0]]].data.cpu().numpy())])
+	return sorted(results, key=lambda x:x[1], reverse = True)
+
 
 def load_config(file_path):
 	conf = configparser.ConfigParser()
@@ -84,29 +88,30 @@ if __name__ == '__main__':
 			text_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.txt'.format(config['dataset'])
 			json_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.json'.format(config['dataset'])
 			#config['dataset']
-			h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], 'NYT_full'), 'rb'))
-			sports = pickle.load(open("hierarchy_sports.p", 'rb'))
-			h_ = pickle.load(open('topic_hierarchy.p', 'rb'))
+			if False:
+				h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], 'NYT_full'), 'rb'))
+				sports = pickle.load(open("hierarchy_sports.p", 'rb'))
+				h_ = pickle.load(open('topic_hierarchy.p', 'rb'))
 
-			concepts = []
+				concepts = []
 
-			concept_configs = [[('politics', 2), 2], [('business', 2), 2], [('disaster', 2), 2]]
-			for con_config in concept_configs:
-				concept = Concept(h_)
-				concept.construct_concepts(con_config, True)
+				concept_configs = [[('politics', 2), 2], [('business', 2), 2], [('disaster', 2), 2]]
+				for con_config in concept_configs:
+					concept = Concept(h_)
+					concept.construct_concepts(con_config, True)
+					concepts.append(concept)
+				#print(concepts[0].links)
+				del concepts[0].links['military']
+				#concepts[0].links['military'] = ['military_']
+				#concepts[0].links['military_'] = ['politics']
+
+				concept = Concept(h)
+				concept.construct_concepts([(u'Science', 2), 2])
 				concepts.append(concept)
-			#print(concepts[0].links)
-			del concepts[0].links['military']
-			#concepts[0].links['military'] = ['military_']
-			#concepts[0].links['military_'] = ['politics']
 
-			concept = Concept(h)
-			concept.construct_concepts([(u'Science', 2), 2])
-			concepts.append(concept)
-
-			concept = Concept(sports)
-			concept.construct_concepts([(u'type of sport', 2), 2])
-			concepts.append(concept)
+				concept = Concept(sports)
+				concept.construct_concepts([(u'type of sport', 2), 2])
+				concepts.append(concept)
 
 			'''
 			concept = Concept(sports)
@@ -123,11 +128,20 @@ if __name__ == '__main__':
 			concepts.append(concept)
 			'''
 				# concept.output_concepts('concepts.txt')
-			graph_builder.load_corpus(text_path, json_path, attn=False)
+			concepts = pickle.load(open("{}_{}_expan_concepts.p".format(config['method'], config['dataset']), 'rb'))
+			#embed()
+			graph_builder.load_corpus(text_path)
 			graph_builder.normalize_text()
-			graph_builder.load_concepts(concepts)
-			print(graph_builder.label2id)
-			sys.exit(-1)
+			keywords = graph_builder.load_concepts(concepts, skip_option = True, expan =True)
+			graph_builder.dump_linked_ids("{}_{}_linked_ids.p".format(config['dataset'], config['id']))
+			#embed()
+			#print(keywords)
+			#print(graph_builder.label2id)
+			if False:
+				for concept in concepts:
+					concept.clean_concept()
+				pickle.dump(concepts, open("{}_{}_concepts.p".format(config['method'], config['dataset']), 'wb'))
+			#sys.exit(-1)
 			graph_builder.build_dictionary()
 			graph_builder.text_to_numbers()
 			X, num_docs, num_words, num_labels = graph_builder.buildTrain(method=config['method'])
@@ -136,6 +150,7 @@ if __name__ == '__main__':
 			
 			graph_builder.dump_mapping("{}_mapping.txt".format(config['dataset']))
 			graph_builder.dump_label("{}_label.p".format(config['dataset']))
+			#graph_builder.dump_linked_ids("{}_linked_ids.p".format(config['dataset']))
 			pickle.dump(save_point, open("{}_{}.p".format(config['method'], config['dataset']), 'wb'))
 			
 		else:
@@ -154,243 +169,159 @@ if __name__ == '__main__':
 		graph_builder = textGraph()
 		graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
 		graph_builder.load_label("{}_label.p".format(config['dataset']))
-		twin = 'stocks_and_bonds'
-
-		siblings = {'manufacturing_': 6, 'business': 7, 'economy_': 8, 'trade_': 9, 'stocks_and_bonds': 10}
+		graph_builder.load_linked_ids("{}_{}_linked_ids.p".format(config['dataset'], config['id']))
+		concepts = pickle.load(open("{}_{}_concepts.p".format(config['method'], config['dataset']), 'rb'))
 		print(graph_builder.label2id)
+		#embed()
 		#sys.exit(-1)
-		model = load_model(config)
-		print(model.doc_embeddings().shape)
-		#print(model.input_embeddings().shape)
-		label2emb = dict()
+		if True:
+			model = load_model(config)
+			doc2emb = model.doc_embeddings()
+			#print(model.doc_embeddings().shape)
+			#print(model.input_embeddings().shape)
+			label2emb = dict()
+			
+			for k in graph_builder.label2id:
+			#for k in siblings:
+			    label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
+			print(len(graph_builder.skip_doc))
+			
+		else:
+			doc2emb = load_doc_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/src/d.vec')
+			label2emb = load_label_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/src/l.vec')
 		
-		for k in graph_builder.label2id:
-		#for k in siblings:
-		    label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
-
-		doc_assignment,top_label_assignment = soft_assign_docs(model.doc_embeddings(), label2emb)
+		doc_assignment,top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
+		docs_info = []
+		with open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json') as meta_json:
+			for idx,line in tqdm(enumerate(meta_json)):
+				tmp = json.loads(line)
+				docs_info.append({'title': tmp['title'], 'type': tmp['type']})
+		#top_label_assignment = pickle.load(open('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/src/sib.dump' ,'rb'))
 		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+		
+		'''
+		for k in top_label_assignment:
+			with open('{}{}_epoch{}_{}_docs.txt'.format('/shared/data/qiz3/text_summ/text_summarization/results/', config['id'], config['epoch_number'], k), 'w') as OUT:
+				for doc in top_label_assignment[k][:100]:
+					docs_info[doc[0]]['score'] = str(doc[1])
+					OUT.write(json.dumps(docs_info[doc[0]]) + '\n')
+		'''
+		#print(top_label_assignment.keys())
+		hierarchy = simple_hierarchy()
+		for idx,h in enumerate(hierarchy.keys()):
+			print(idx, h)
+			if h == 'root' :
+				continue
+			for twin in hierarchy[h]:
+				#twin = twin.strip('_').replace('right', 'rights').replace('law', 'law_enforcement')
+				docs = [x[0] for x in top_label_assignment[twin][:100]]
+				siblings_docs = []
+				for sibs in hierarchy[h]:
+					#sibs = sibs.strip('_').replace('right', 'rights').replace('law', 'law_enforcement')
+					if sibs != twin:
+						siblings_docs.append([x[0] for x in top_label_assignment[sibs][:100]])
+
+				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
+				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx, option = 'A')
+				
+				#expan_terms = expand(label2emb[twin], model, graph_builder.name2id, ranked_list[:10])
+				if False:
+					seed_cnt = 0
+					#print(concepts[idx].clean_links)
+					for l in concepts[idx].clean_links:
+						if concepts[idx].clean_links[l] == twin:
+							seed_cnt += 1
+					for seed in expan_terms:
+						if seed_cnt >= 6:
+							break
+						if seed[0] not in concepts[idx].clean_links:
+							concepts[idx].clean_links[seed[0]] = twin
+							seed_cnt += 1
+				#print(concepts[idx].clean_links)
+				print('concept:{}, category:{}, key phrases:{}'.format(h, twin, ranked_list[:30]))
+
+			embed()
+		#pickle.dump(concepts, open("{}_{}_expan_concepts.p".format(config['method'], config['dataset']), 'wb'))
+		embed()
+
+		'''
 		docs = [x[0] for x in top_label_assignment[twin][:30]]
 		siblings_docs = []
 
 		for key in siblings.keys():
 			if key != twin:
 				siblings_docs.append([x[0] for x in top_label_assignment[key][:100]])
-		phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
-		scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx)
+		
 		embed()
+		'''
+	
 	elif config['stage'] == 'test':
 	# Find concentrated concepts and specific common sense node
-		print("Loading Embedding")
-		#Sports Test Documents
-		set_docs = [
-		#list(range(167854, 167866)),
-		[15873, 42243, 98051, 101637, 61064, 56336, 42131, 74261, 42524, 30749, 44702, 46761, 61489, 61629, 160829, 7487, 105669, 75085, 36304, 55646, 95585, 750, 23665, 148730, 112379, 10367], #dark matter
-		[5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945],  # basketball
-		[1002, 33719, 62913, 2123, 122759, 36113, 35827, 16109], #korea nuclear
-		[1848, 55838, 138468, 55669, 69069, 53809, 23665, 61064, 82084, 61629], #physics
-		[51, 256, 381, 169, 45296, 667], #football
-		[52, 357, 629, 936, 801, 1681, 1105, 725], #football
-		[77, 6218, 11847, 615, 1940, 5458, 3169, 10201, 2453, 47171], #hocky
-		[79, 1163, 2576, 15069, 2836, 11288, 3169, 1680, 14666, 5646, 11569], #hocky
-		[99, 2323, 14379, 4422, 4573, 5148, 292, 1322, 6811, 6654, 382] #baseball
-		]
-		
-		set_docs = [list(range(167844 + 10 * i, 167855 + 10 * i)) for i in range(2)]
-
+		with open(config['input_file']) as IN:
+			input_docs = []
+			for line in IN:
+				line = line.strip()
+				phrases = re.findall("<phrase>(.*?)</phrase>", line)
+				#print(phrases)
+				#result = {}
+				#for p in set(phrases):
+				#	line = line.replace("<phrase>"+p+"</phrase>", p.replace(' ', '_'))
+				input_docs.append(' '.join([p.replace(' ', '_').lower() for p in phrases]))
+				#break
+		print(len(input_docs))
 		graph_builder = textGraph(None)
-		graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
-		graph_builder.load_label("{}_label.p".format(config['dataset']))
-		#graph_builder.label2id = {'maths': 0, 'biology': 1, 'chemistry': 2, 'astronomy': 3, 'physics': 4, 'geology': 5, 'science': 6, 'economics': 7, 'economics_other': 8, 'coporations': 9, 'political_other': 10, 'politics': 11, 'elections': 12, 'auto_racing': 13, 'ice_hockey': 14, 'golf': 15, 'alpine_skiing': 16, 'association_football': 17, 'cycle_sport': 18, 'type_of_sport': 19, 'swimming': 20, 'cricket': 21, 'american_football': 22, 'athletics': 23, 'basketball': 24, 'baseball': 25, 'figure_skating': 26, 'tennis': 27, 'chess': 28}
-		#print(graph_builder.label2id)
+		graph_builder.load_linked_ids("{}_linked_ids.p".format(config['dataset']))
+		feature_vectors, vectorizer = tf_idf_vectorizer('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+		results = summarizer.compare(config, input_docs, feature_vectors, vectorizer, graph_builder.skip_doc)
+		#results = summarizer.compare(config, input_docs, feature_vectors, vectorizer)
+
+		
+		# OUT = open("intermediate_data/{}_{}_set{}.txt".format(config['summ_method'], config['dataset'], idx), 'w')
+		# FILELIST.write("intermediate_data/{}_{}_set{}.txt\n".format(config['summ_method'], config['dataset'], idx))
+
+		# OUT.write(' '.join(map(str, docs)) + '\n')
+		# for r in ranked_list:
+		# 	OUT.write("{} {}\n".format(r[0], r[1]))
 		#sys.exit(-1)
-		model = load_model(config)
-		print(model.doc_embeddings().shape)
 
-		#print(model.input_embeddings().shape)
-		label2emb = dict()
-		for k in graph_builder.label2id:
-		    label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
-		else:
-		    print('Missing:',k)
+		if False: #KNN module trial
+			graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+			graph_builder.load_label("{}_label.p".format(config['dataset']))
 
-
-		model = load_model(config)
-		#doc_emb = load_doc_emb(config['doc_emb_path'])
-		#label_emb = load_label_emb(config['label_emb_path'])
-		#main_doc_assignment = load_gt_labels('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json')
-		# main_doc_assignment = background_doc_assign(doc_emb, label_emb, [''])
-		doc_assignment,top_label_assignment = soft_assign_docs(model.doc_embeddings(), label2emb)
-		FILELIST = open("intermediate_data/{}_{}_filelist.txt".format(config['summ_method'], config['dataset']), 'w')
-		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/nyt_example.txt')
-
-		phrase_scores = {}
-
-		for idx,docs in enumerate(set_docs):
-			print(docs)
-			OUT = open("intermediate_data/{}_{}_set{}.txt".format(config['summ_method'], config['dataset'], idx), 'w')
-			FILELIST.write("intermediate_data/{}_{}_set{}.txt\n".format(config['summ_method'], config['dataset'], idx))
-
-			#TODO: @jingjing, rewrite target_doc_assign in utils, you can have label2emb.keys instead call concepts
-			doc_embeddings = model.doc_embeddings()
-			hierarchy = simple_hierarchy()
-			label, all_siblings = target_hier_doc_assign(hierarchy, docs, label2emb, doc_embeddings, option='hard')
-			print(label, all_siblings)
-			# main_label, target_label, sibling_labels = target_doc_assign(concepts, docs, label_emb, doc_emb)
-			# main_set = set(map(lambda x:x[0], main_doc_assignment[main_label]))
-			# print(len(main_set))
-			#siblings = retrieve_siblings(main_set, doc_assignment, sibling_labels, topk=100)
-			
-			siblings_docs = [list(map(lambda x:x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings if l != label]
-			twin_docs = list(map(lambda x:x[0], top_label_assignment[label][:config['topk']]))
-			#print(siblings_docs, twin_docs)
-			print("Number of sibling groups: {}".format(len(siblings_docs)))
-
-			ranked_list = []
-
-			if config['summ_method'] == 'caseOLAP':
-				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
-				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
-	                                                           phrase2idx, option='B')
-				phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
-
-			elif config['summ_method'] == 'caseOLAP-twin': 
-
-				#############################
-				# Diversified ranking block #
-				#############################
-				twin_docs.extend(docs)
-				phrase2idx, idx2phrase = build_in_domain_dict(twin_docs, document_phrase_cnt)
-				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, twin_docs, document_phrase_cnt,
-															   inverted_index, phrase2idx, option='A')
+			if False:
+				model = load_model(config)
+				doc2emb = model.doc_embeddings()
+				#print(model.doc_embeddings().shape)
+				#print(model.input_embeddings().shape)
+				label2emb = dict()
 				
-				#twin_rank = list(map(lambda x:x[0], ranked_list))
-				#similarity_scores, _ = calculate_pairwise_similarity(phrase2idx)
-				#selected_index = select_phrases(scores, similarity_scores, 2, 1000)
-				#phrases = [idx2phrase[k] for k in selected_index]
-
-				##################
-				# caseOLAP block #
-				##################
-				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
-				scores_, ranked_list_ = generate_caseOLAP_scores([twin_docs], docs, document_phrase_cnt, inverted_index,
-	                                                           phrase2idx, option='A')
-				phrase_scores = {t[0]: t[1] for t in ranked_list_}
-				background_scores = {t[0]: t[1] for t in ranked_list}
-				for phrase in phrase2idx:
-					phrase_scores[phrase] *= background_scores[phrase]
-				ranked_list = [(k, phrase_scores[k]) for k in phrase_scores]
-				ranked_list = sorted(ranked_list, key=lambda t: -t[1])
-
-			elif config['summ_method'] == 'textrank':
-				###################
-	            # Textrank block ##
-	            ###################
-
-				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
-				similarity_scores = build_co_occurrence_matrix(docs, phrase2idx,
-				        '/shared/data/qiz3/text_summ/src/jt_code/HiExpan/data/nyt/intermediate/segmentation1.txt')
-				scores = textrank(phrase2idx.keys(), similarity_scores)
-				ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
-				ranked_list = sorted(ranked_list, key=lambda t:-t[1])
-				embed()
-				#phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
-
-			elif config['summ_method'] == 'kams':
-
-				phrase2idx, idx2phrase = build_in_domain_dict(twin_docs, document_phrase_cnt)
-				scores_, ranked_list_ = generate_caseOLAP_scores(siblings_docs, twin_docs, document_phrase_cnt,inverted_index, phrase2idx, option='A')
-				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
-				#scores, ranked_list = generate_caseOLAP_scores([twin_docs], docs, document_phrase_cnt, inverted_index, phrase2idx, option='B')
-				scores, ranked_list = generate_caseOLAP_scores([twin_docs], docs, document_phrase_cnt, inverted_index, phrase2idx, option='B')
+				for k in graph_builder.label2id:
+				#for k in siblings:
+				    label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
+				print(len(graph_builder.skip_doc))
 				
-				phrase_scores_ = [t[0] for t in ranked_list]
-				background_scores = [t[0] for t in ranked_list_]
-				
-				labels = dict()
-				for r in phrase_scores_[:10]:
-					labels[r] = 1
+			else:
+				doc2emb = load_doc_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/d.vec')
+				label2emb = load_label_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/l.vec')
 
-				for p in background_scores[:1000]:
-					if p in phrase_scores_[:50]:
-						labels[p] = 0
+			doc_assignment,top_label_assignment = soft_assign_docs(doc2emb, label2emb)
 
-				'''
-				target_location, twin_location = {}, {}
-				for idx,ph in enumerate(ranked_list):
-					target_location[ph[0]] = idx
-				for idx,ph in enumerate(ranked_list_):
-					if ph[0] in target_location:
-						twin_location[ph[0]] = len(twin_location)
-				location_diff = {}
-				'''
+			count = defaultdict(int)
+			for idx in results:
+				count[doc_assignment[idx]] += 1
+				#print(idx, doc_assignment[idx])
+			print(count)
+			embed()
+			phrase_scores = {}
 
-
-				similarity_scores = build_co_occurrence_matrix(docs, phrase2idx,
-				        '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt')
-				
-				ranked_list = seedRanker(phrase2idx.keys(), similarity_scores, phrase2idx, idx2phrase, labels)
-				#kams_ranked_list = GCNRanker(phrase2idx.keys(), similarity_scores, phrase2idx, idx2phrase, labels)
-				#kams_ranked_list = sorted(kams_ranked_list, key=lambda x:x[1], reverse=True)
-
-				#embed()
-				#phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
-
-				'''
-				##########################
-				# Manifold ranking block #
-				##########################
-				'''
-				'''
-				phrase2idx, idx2phrase = build_in_domain_dict(twin_docs, document_phrase_cnt)
-				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, twin_docs, document_phrase_cnt,
-															   inverted_index,
-															   phrase2idx)
-				phrase_selected = 1000
-				all_phrases = [t[0] for t in ranked_list[:phrase_selected]]
-				phrase2idx = {phrase: i for (i, phrase) in enumerate(all_phrases)}
-				idx2phrase = {phrase2idx[k]: k for k in phrase2idx}
-				similarity_scores, _ = calculate_pairwise_similarity(phrase2idx)
-				topic_scores = np.zeros([len(phrase2idx)])
-				for i in range(phrase_selected):
-					topic_scores[phrase2idx[ranked_list[i][0]]] = ranked_list[i][1]
-				target_phrase2idx = generate_candidate_phrases(document_phrase_cnt, docs)
-				target_phrases = [phrase for phrase in phrase2idx if phrase in target_phrase2idx]
-				twin_phrases = [phrase for phrase in phrase2idx if phrase not in target_phrase2idx]
-				A = manifold_ranking(twin_phrases, target_phrases, topic_scores, phrase2idx, similarity_scores)
-				ranked_list = [(phrase, A[phrase2idx[phrase]]) for phrase in target_phrases]
-				ranked_list = sorted(ranked_list, key=lambda t: -t[1])
-				embed()
-				'''
-
-
-				'''
-				ranked_lists = []
-				for doc in docs:
-					phrase2idx, idx2phrase = build_in_domain_dict([doc], document_phrase_cnt)
-					similarity_scores = build_co_occurrence_matrix([doc], phrase2idx,
-					        '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt')
-					scores = textrank(phrase2idx.keys(), similarity_scores)
-					sub_ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
-					sub_ranked_list = sorted(sub_ranked_list, key=lambda t:-t[1])
-					ranked_lists.append(sub_ranked_list)
-				
-				#print(doc, ranked_list[:20], rank_in_twins)
-				#print('**'.join(list(map(lambda x:x[0], ranked_list[:10]))))
-				#embed()
-
-				ranked_list = ensembleSumm(ranked_lists, k=30)
-				'''
-
-			OUT.write(' '.join(map(str, docs)) + '\n')
-			for r in ranked_list:
-				OUT.write("{} {}\n".format(r[0], r[1]))
+		
 
 			
 			#break
 
 		#pickle.dump(phrase_scores, open('baselines/sentence_summ/phrase_scores.p', 'wb'))
 	elif config['stage'] == 'finetune':
+		t.cuda.set_device(int(config['gpu']))
 		if config['preprocess']:
 			model = load_model(config)
 			text_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.txt'.format(config['dataset'])
@@ -400,7 +331,7 @@ if __name__ == '__main__':
 			graph_builder = textGraph()
 			graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
 			graph_builder.load_label("{}_label.p".format(config['dataset']))
-
+			#print(len(graph_builder.name2id))
 			labels = {'physics': 19, 'chemistry': 20, 'astronomy': 21, 'geology': 23, 'biology': 24}
 			
 			label2emb = dict()
@@ -417,7 +348,8 @@ if __name__ == '__main__':
 			for k in labels:
 				label2emb[k] = model.label_embed.weight[labels[k], :].data.cpu().numpy() 
 				for _id, score in sorted(top_label_assignment[k])[:topk]:
-					training_data.append([classes.index(k), len(docs)])
+					#training_data.append([classes.index(k), len(docs)])
+					training_data.append(classes.index(k))
 					docs.append(_id)
 
 			print(len(docs), docs[0])
@@ -425,6 +357,7 @@ if __name__ == '__main__':
 			graph_builder.normalize_text()
 			save_point = {}
 			seq, seq_mask = graph_builder.pad_sequences()
+			print(seq.shape, seq_mask.shape)
 			save_point['seq'], save_point['seq_mask'] = seq, seq_mask
 			save_point['training_data'] = training_data
 			save_point['labels'] = list(labels.values())
@@ -432,6 +365,7 @@ if __name__ == '__main__':
 		else:
 			model = load_model(config)
 			save_point = pickle.load(open("{}_{}_finetune.p".format(config['method'], config['dataset']), 'rb'))
+		config['method'] = 'finetune'
 		embedder.Train(config, [save_point['seq'], save_point['seq_mask']], [model, save_point['training_data'], save_point['labels']])
 		#labels.values()
 		#for 

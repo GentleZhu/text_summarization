@@ -1,14 +1,14 @@
 [DEFAULT]
 batch_size = 128
-epoch_number = 20
+epoch_number = 10
 emb_size = 100
 kb_emb_size = 100
 num_sample = 5
-gpu = 2
+gpu = 3
 model_dir = /shared/data/qiz3/text_summ/src/model/
 dataset = NYT_full_lead-3
 method = KnowledgeEmbed
-id = mar03-hie-nce-lr_0.001
+id = mar11_expan-hie-hinge-lr_0.001
 preprocess = True
 doc_emb_path = intermediate_data/pretrain_doc.emb
 label_emb_path = intermediate_data/pretrain_label.emb

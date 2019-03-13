@@ -95,9 +95,9 @@ def Train(config, X, params):
 		hier_flag = False
 		if len(X) == 3:
 			hier_flag = True
-			print(X[2])
+			#print(X[2])
 			ll = t.LongTensor(X[2])
-			print('constrain shape', ll.shape)
+			#print('constrain shape', ll.shape)
 		train_loader = tdata.DataLoader(
              KnowledgeEmbedDataset(X[:2]),
              batch_size=config['batch_size'], shuffle=True, pin_memory=True)
@@ -110,13 +110,15 @@ def Train(config, X, params):
 
 		model.cuda()
 
+		#hier_flag = False
+
 		for epoch in range(config['epoch_number']):
 			epoch_loss = 0.0
 			for batch_data in tqdm(train_loader):
 				if hier_flag:
-					loss = model(batch_data, ll, config['num_sample'])
+					loss = model(batch_data, ll, num_sampled=config['num_sample'])
 				else:
-					loss = model(batch_data, config['num_sample'])
+					loss = model(batch_data, num_sampled=config['num_sample'])
 				epoch_loss += loss
 				model.zero_grad()
 				loss.backward()
@@ -128,9 +130,11 @@ def Train(config, X, params):
 			print("Epoch:{}, Loss:{}".format(epoch, epoch_loss))
 			#break
 	elif config['method'] == 'finetune':
-		model = KnowledgeFineTune(params[0], t.Tensor(params[2]))
-		train_loader.DataLoader(tdata.TensorDataset(t.from_numpy(X[0]), t.from_numpy(X[1]), params[1]),
-			batch_size=config['batch_size'], shuffle=True, pin_memory=True)
+		model = KnowledgeFineTune(params[0], t.LongTensor(params[2]))
+		#print(params[1])
+		#embed()
+		train_loader = tdata.DataLoader(tdata.TensorDataset(t.LongTensor(X[0]), t.LongTensor(X[1]), t.LongTensor(params[1])),
+			batch_size=5, shuffle=True, pin_memory=True)
 		t.cuda.set_device(int(config['gpu']))
 		optimizer = Adam(params=model.parameters(), lr=0.001)
 
@@ -139,6 +143,7 @@ def Train(config, X, params):
 		for epoch in range(config['epoch_number']):
 			epoch_loss = 0.0
 			for data,mask,label in tqdm(train_loader):
+				print(data, mask, label)
 				loss = model(data, mask, label, config['num_sample'])
 				epoch_loss += loss
 				model.zero_grad()

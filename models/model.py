@@ -337,7 +337,7 @@ class KnowledgeEmbed(nn.Module):
                 u(input_ids).unsqueeze(1),
                 v(output_noise_ids).permute(0, 2, 1)).squeeze(dim=1))
 
-    def _regularize(self, input_labels, u, v, opt = 0):
+    def _regularize(self, input_labels, u, v, opt = 1):
         use_cuda = self.word_embed.weight.is_cuda
         input_ids = input_labels[:, 0]
         output_ids = input_labels[:, 1:]
@@ -357,12 +357,15 @@ class KnowledgeEmbed(nn.Module):
 
 
 
-    def forward(self, batch_data, ll, num_sampled):
+    def forward(self, batch_data, ll=None, num_sampled=5):
         dt, lt = batch_data
         loss_a = self._forward(dt, self.doc_embed, self.word_embed, num_sampled)
         loss_b = self._forward(lt, self.label_embed, self.word_embed, num_sampled)
-        regularization = self._regularize(ll, self.label_embed, self.label_embed, 0)
-        return loss_a + loss_b + regularization
+        if ll is not None:
+            regularization = self._regularize(ll, self.label_embed, self.label_embed, 0)
+            return loss_a + loss_b + regularization
+        else:
+            return loss_a + loss_b
         #return loss_a + loss_b
 
     def input_embeddings(self):
@@ -375,6 +378,7 @@ class KnowledgeEmbed(nn.Module):
 # several different structure should be tried out:
     # direct combine OR using reconstruction loss
 # for few shots learning
+# require somehow top-k to be very relevant, so I may postpone it now
 class KnowledgeFineTune(nn.Module):
     def __init__(self, embed_model, labels):
         """
@@ -392,24 +396,30 @@ class KnowledgeFineTune(nn.Module):
         self.num_docs = embed_model.num_docs
         self.num_labels = embed_model.num_labels
         self.embed_size = embed_model.embed_size
-        self.labels = labels
-        self.word_embed = embed_model.word_embed
+        self.labels = labels.cuda()
+
+
+        self.word_embed = nn.Embedding(self.num_words, self.embed_size, sparse=False).cuda()
+        self.word_embed.weight = embed_model.word_embed.weight
 
         #self.doc_embed = nn.Embedding(self.num_docs, self.embed_size, sparse=True)
         #self.doc_embed.weight = Parameter(t.FloatTensor(self.num_docs, self.embed_size).uniform_(-1, 1))
 
-        self.label_embed = embed_model.label_embed
+        self.label_embed = nn.Embedding(self.num_labels, self.embed_size, sparse=False).cuda()
+        self.label_embed.weight = embed_model.label_embed.weight
         
         self.attn = nn.Bilinear(self.embed_size, self.embed_size, self.embed_size, bias = False)
         self.loss = nn.CrossEntropyLoss()
 
 
     def forward(self, input_seqs, out_labels, num_sampled, opt):
-        if use_cuda:
+        if True:
             word_ids = input_seqs.cuda()
-
+        #print(input_seqs, out_labels)
         w = self.word_embed(word_ids)
-        scores = self.attn(w, self.label_embed(self.labels))
+        l = self.label_embed(self.labels[0]).unsqueeze(0).repeat(input_seqs.size(0), 800, 1)
+        print(w.shape, l.shape)
+        scores = self.attn(w, l)
         scores.data.masked_fill_(x_mask.data, -float('inf'))
         weights = F.softmax(scores)
         output_doc = weights.unsqueeze(1).bmm(x).squeeze(1)
