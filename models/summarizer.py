@@ -709,16 +709,24 @@ def main():
     embed()
     exit()
 
-def search_nearest_emb(input_embs, bg_doc2emb):
+def search_nearest_emb(input_embs, bg_doc2emb, skip_doc = None, contain_doc = None):
     avg_emb = np.mean(input_embs, axis=0)
     ranked_list = []
 
     for doc_id in bg_doc2emb:
         ranked_list.append((int(doc_id), 1 - spatial.distance.cosine(avg_emb, bg_doc2emb[doc_id])))
     ranked_list = sorted(ranked_list, key=lambda t: -t[1])
-    ranked_list = [t[0] for t in ranked_list[:len(input_embs)]]
 
-    return ranked_list
+    ret = []
+    for t in ranked_list:
+        if skip_doc and t[0] in skip_doc:
+            continue
+        if contain_doc is None or t[0] in contain_doc:
+            ret.append(t[0])
+            if len(ret) >= len(input_embs):
+                break
+
+    return ret
 
 def search_nearest_doc(feature_vectors, vectorizer, target_docs, skip_doc = None, contain_doc = None):
     
