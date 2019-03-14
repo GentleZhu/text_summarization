@@ -14,6 +14,7 @@ from collections import defaultdict
 import pickle, scipy, nltk
 import re, math
 from numpy.linalg import matrix_power
+from scipy import spatial
 
 from phraseExtractor import phraseExtractor
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -708,7 +709,16 @@ def main():
     embed()
     exit()
 
+def search_nearest_emb(input_embs, bg_doc2emb):
+    avg_emb = np.mean(input_embs, axis=0)
+    ranked_list = []
 
+    for doc_id in bg_doc2emb:
+        ranked_list.append((int(doc_id), 1 - spatial.distance.cosine(avg_emb, bg_doc2emb[doc_id])))
+    ranked_list = sorted(ranked_list, key=lambda t: -t[1])
+    ranked_list = [t[0] for t in ranked_list[:len(input_embs)]]
+
+    return ranked_list
 
 def search_nearest_doc(feature_vectors, vectorizer, target_docs, skip_doc = None, contain_doc = None):
     
