@@ -128,7 +128,7 @@ if __name__ == '__main__':
 			concepts.append(concept)
 			'''
 				# concept.output_concepts('concepts.txt')
-			concepts = pickle.load(open("{}_{}_expan_concepts.p".format(config['method'], config['dataset']), 'rb'))
+			concepts = pickle.load(open("{}_{}_concepts.p".format(config['method'], config['dataset']), 'rb'))
 			#embed()
 			graph_builder.load_corpus(text_path)
 			graph_builder.normalize_text()
@@ -141,7 +141,7 @@ if __name__ == '__main__':
 				for concept in concepts:
 					concept.clean_concept()
 				pickle.dump(concepts, open("{}_{}_concepts.p".format(config['method'], config['dataset']), 'wb'))
-			#sys.exit(-1)
+			sys.exit(-1)
 			graph_builder.build_dictionary()
 			graph_builder.text_to_numbers()
 			X, num_docs, num_words, num_labels = graph_builder.buildTrain(method=config['method'])
@@ -169,11 +169,13 @@ if __name__ == '__main__':
 		graph_builder = textGraph()
 		graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
 		graph_builder.load_label("{}_label.p".format(config['dataset']))
+		#graph_builder.load_label("NYT_full_lead-3_example_label.p")
+		
 		graph_builder.load_linked_ids("{}_{}_linked_ids.p".format(config['dataset'], config['id']))
 		concepts = pickle.load(open("{}_{}_concepts.p".format(config['method'], config['dataset']), 'rb'))
 		print(graph_builder.label2id)
 		#embed()
-		#sys.exit(-1)
+		sys.exit(-1)
 		if True:
 			model = load_model(config)
 			doc2emb = model.doc_embeddings()
@@ -187,8 +189,9 @@ if __name__ == '__main__':
 			print(len(graph_builder.skip_doc))
 			
 		else:
-			doc2emb = load_doc_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/src/d.vec')
-			label2emb = load_label_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/src/l.vec')
+			doc2emb = load_doc_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/d_expan.vec')
+			label2emb = load_label_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/l_expan.vec')
+			phrase2emb = load_phrase_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/p.vec')
 		
 		doc_assignment,top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
 		docs_info = []
@@ -197,8 +200,11 @@ if __name__ == '__main__':
 				tmp = json.loads(line)
 				docs_info.append({'title': tmp['title'], 'type': tmp['type']})
 		#top_label_assignment = pickle.load(open('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/src/sib.dump' ,'rb'))
-		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
-		
+		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/nyt_lead_3.txt')
+
+		embed()
+		exit()
+
 		'''
 		for k in top_label_assignment:
 			with open('{}{}_epoch{}_{}_docs.txt'.format('/shared/data/qiz3/text_summ/text_summarization/results/', config['id'], config['epoch_number'], k), 'w') as OUT:
@@ -257,20 +263,27 @@ if __name__ == '__main__':
 	
 	elif config['stage'] == 'test':
 	# Find concentrated concepts and specific common sense node
+		graph_builder = textGraph(None)
+		graph_builder.load_linked_ids("{}_linked_ids.p".format(config['dataset']))
+		graph_builder.load_stopwords('/shared/data/qiz3/text_summ/data/stopwords.txt')
+		graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+		graph_builder.load_label("{}_label.p".format(config['dataset']))
 		with open(config['input_file']) as IN:
 			input_docs = []
+			docs = []
 			for line in IN:
 				line = line.strip()
 				phrases = re.findall("<phrase>(.*?)</phrase>", line)
 				#print(phrases)
 				#result = {}
-				#for p in set(phrases):
-				#	line = line.replace("<phrase>"+p+"</phrase>", p.replace(' ', '_'))
+				for p in set(phrases):
+					line = line.replace("<phrase>"+p+"</phrase>", p.replace(' ', '_'))
 				input_docs.append(' '.join([p.replace(' ', '_').lower() for p in phrases]))
+				docs.append(graph_builder.normalize(line))
 				#break
 		print(len(input_docs))
-		graph_builder = textGraph(None)
-		graph_builder.load_linked_ids("{}_linked_ids.p".format(config['dataset']))
+		
+
 		feature_vectors, vectorizer = tf_idf_vectorizer('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
 		results = summarizer.compare(config, input_docs, feature_vectors, vectorizer, graph_builder.skip_doc)
 		#results = summarizer.compare(config, input_docs, feature_vectors, vectorizer)
@@ -284,11 +297,11 @@ if __name__ == '__main__':
 		# 	OUT.write("{} {}\n".format(r[0], r[1]))
 		#sys.exit(-1)
 
-		if False: #KNN module trial
+		if True: #KNN module trial
 			graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
 			graph_builder.load_label("{}_label.p".format(config['dataset']))
 
-			if False:
+			if True:
 				model = load_model(config)
 				doc2emb = model.doc_embeddings()
 				#print(model.doc_embeddings().shape)
@@ -304,18 +317,29 @@ if __name__ == '__main__':
 				doc2emb = load_doc_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/d.vec')
 				label2emb = load_label_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/l.vec')
 
-			doc_assignment,top_label_assignment = soft_assign_docs(doc2emb, label2emb)
+			doc_assignment,top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
 
 			count = defaultdict(int)
 			for idx in results:
 				count[doc_assignment[idx]] += 1
 				#print(idx, doc_assignment[idx])
-			print(count)
-			embed()
-			phrase_scores = {}
+			
 
-		
+			#category = max(count.items(), key=operator.itemgetter(1))[0]
+			category = 'election_'
+			print("category distribution:{}, inferred topic is {}".format(count, category))
 
+			hierarchy = simple_hierarchy()
+			for h in hierarchy:
+				if category in hierarchy[h]:
+					all_siblings = hierarchy[h]
+					break
+
+			siblings_docs = [list(map(lambda x:x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings if l != category]
+			twin_docs = list(map(lambda x:x[0], top_label_assignment[category][:config['topk']]))
+
+		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+		summarizer.summary(config, docs, siblings_docs, twin_docs, document_phrase_cnt, inverted_index)
 			
 			#break
 

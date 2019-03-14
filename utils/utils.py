@@ -112,7 +112,8 @@ class textGraph(object):
     
     
     def normalize(self, text):
-        return [word.strip(string.punctuation).lower() for word in text.split() if word not in (self.stopwords)]
+        text = text.lower()
+        return [word.strip(string.punctuation) for word in text.split() if word not in (self.stopwords)]
         #return(texts)
 
     #add mapping here
@@ -780,6 +781,16 @@ def load_label_emb(emb_path):
             output[tmp[0]] = np.asarray(list(map(float, tmp[1:])))
         return output
 
+def load_phrase_emb(emb_path):
+    with open(emb_path) as EMB:
+        headline = EMB.readline().strip().split(' ')
+        num_nodes, num_dim = headline
+        output = dict()
+        for line in EMB:
+            tmp = line.strip().split(' ')
+            output[tmp[0]] = np.asarray(list(map(float, tmp[1:])))
+        return output
+
 def soft_assign_docs(doc_embeddings, label_embeddings, skip_docs = None):
     # Use cosine similarity to assign docs to labels
     # doc_embeddings: 2-d numpy array
@@ -986,6 +997,42 @@ def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):
     label_data = np.transpose(np.array([label_data]))
     
     return(batch_data, label_data)
+
+
+def doc_reweight(phrase_embedding, phrase_freq, dist_map, option):
+    # phrase_freq: {'phrase_1': x_1, 'phrase_2': x_2,...}
+    # x_i means the logarithm of frequency, log(freq(phrase_i) + 1).
+    # Load dist_map from file.
+    #option: How to do reweighting. 'A': direct average embedding. 'B': average embedding with weights.
+
+    if option == 'A':
+        dist_map = {phrase: 1 for phrase in phrase_embedding}
+    elif option == 'B' and dist_map is None:
+        dist_map = pickle.load(open('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/dist_map.p', 'rb'))
+
+    vec_size = 0
+    for p in phrase_embedding:
+        vec_size = len(phrase_embedding[p])
+        break
+
+    avg_emb = avg_emb_with_distinct(phrase_freq, phrase_embedding, dist_map, vec_size)
+
+    return avg_emb
+
+def avg_emb_with_distinct(phrase_freq, embs_from, dist_map, vec_size):
+
+	avg_emb = np.zeros(vec_size)
+	t_weight = 0
+
+	for key, value in phrase_freq.items():
+		t_emb = embs_from[key]
+		w = value * dist_map[key]
+		avg_emb += w * t_emb
+		t_weight += w
+
+	avg_emb /= t_weight
+
+	return avg_emb
 
 def generate_relations():
     all_relations = []

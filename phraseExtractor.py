@@ -6,7 +6,7 @@ from tqdm import tqdm
 class phraseExtractor:
     def __init__(self, entity_candidates, phrase2idx, target_doc_list, sibling_groups, entity2freq):
         self.entity_candidates = entity_candidates
-        self.target_doc_list = target_doc_list
+        self.target_docs = target_doc_list
         self.sibling_groups = sibling_groups
         self.phrase2idx = phrase2idx
         self.entity2embed = None#entity2embed
@@ -44,10 +44,16 @@ class phraseExtractor:
             exp_list.append(normal_value)
         return exp_list
 
-    def _get_target_phrase_cnt(self, target_doc_ids):
+    def _get_sibling_phrase_cnt(self, target_doc_ids):
         s = 0
         for doc_id in target_doc_ids:
             s += sum([self.document_phrase_cnt[doc_id][entity] for entity in self.document_phrase_cnt[doc_id]])
+        return s
+
+    def _get_target_phrase_cnt(self, target_docs):
+        s = 0
+        for doc in target_docs:
+            s += len(doc)
         return s
 
     def _calculate_max_df(self, sibling_group):
@@ -64,16 +70,30 @@ class phraseExtractor:
         #print('Done.')
         return max_df
 
+    def _calculate_target_max_df(self, target_docs):
+        entities = set()
+        for doc in target_docs:
+            entities |= set(doc)
+        max_df = -1
+        #print('Done. Calculating max df...')
+        for entity in entities:
+            df = sum([1 if entity in x else 0 for x in target_docs])
+            if df > max_df:
+                max_df = df
+        #print('Done.')
+        assert max_df > 0
+        return max_df 
+
     def load_freq_data(self, document_phrase_cnt, inverted_index):
         self.document_phrase_cnt = document_phrase_cnt
         self.inverted_index = inverted_index
 
-        self.avg_dl = sum([self._get_target_phrase_cnt(sibling_cell) for sibling_cell in self.sibling_groups])
-        self.avg_dl += self._get_target_phrase_cnt(self.target_doc_list)
+        self.avg_dl = sum([self._get_sibling_phrase_cnt(sibling_cell) for sibling_cell in self.sibling_groups])
+        self.avg_dl += self._get_target_phrase_cnt(self.target_docs)
         self.avg_dl /= (len(self.sibling_groups) + 1)
 
     def _calculate_sibling_max_df(self):
-        max_dfs = [self._calculate_max_df(self.target_doc_list)]
+        max_dfs = [self._calculate_target_max_df(self.target_docs)]
         for sibling in self.sibling_groups:
             max_dfs.append(self._calculate_max_df(sibling))
         self.max_dfs = max_dfs
@@ -82,17 +102,21 @@ class phraseExtractor:
         tf = sum([self.inverted_index[entity][doc_id] for doc_id in group])
         return tf
 
+    def _calculate_target_tf(self, entity, target_docs):
+        tf = sum([target_docs.count(entity) for doc in target_docs])
+        return tf
+
     def _compute_entity_score(self, entity, score_option):
-        current_df = sum([1 if self.inverted_index[entity][doc_id] > 0 else 0 for doc_id in self.target_doc_list])
+        current_df = sum([1 if entity in doc else 0 for doc in self.target_docs])
         score_list = []
-        context_group = [(self._get_target_phrase_cnt(self.target_doc_list), current_df)]
+        context_group = [(self._get_target_phrase_cnt(self.target_docs), current_df)]
         for sibling_group in self.sibling_groups:
             df = sum([1 if self.inverted_index[entity][doc_id] > 0 else 0 for doc_id in sibling_group])
-            context_group.append((self._get_target_phrase_cnt(sibling_group), df))
+            context_group.append((self._get_sibling_phrase_cnt(sibling_group), df))
         for idx, g in enumerate(context_group):
             if idx == 0:
                 score_list.append(self.bm25_df_paper(g[1], self.max_dfs[idx],
-                                                     self._calculate_tf(entity, self.target_doc_list), g[0], self.avg_dl))
+                                                     self._calculate_target_tf(entity, self.target_docs), g[0], self.avg_dl))
             else:
                 score_list.append(self.bm25_df_paper(g[1], self.max_dfs[idx],
                                                      self._calculate_tf(entity, self.sibling_groups[idx - 1]), g[0], self.avg_dl))
