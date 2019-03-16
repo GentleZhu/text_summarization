@@ -10,8 +10,9 @@ dataset = NYT_full_lead-3
 method = KnowledgeEmbed
 id = mar11_expan-hie-hinge-lr_0.001
 preprocess = True
-input_file = results/Zika_Virus.txt
+input_file = results/2016_election.txt
 stage = test
-summ_method = caseOLAP-twin
+summ_method = textrank
 topk = 100
-
+expan = 1
+comparative_opt = knn

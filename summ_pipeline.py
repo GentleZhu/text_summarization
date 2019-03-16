@@ -7,7 +7,7 @@ from phraseExtractor import phraseExtractor
 sys.path.append('./models/')
 import embedder
 from sklearn.feature_extraction.text import TfidfVectorizer
-from summarizer import collect_statistics, build_in_domain_dict, generate_caseOLAP_scores, build_co_occurrence_matrix
+from summarizer import collect_statistics, build_background_dict, generate_caseOLAP_scores, _generate_caseOLAP_scores, build_co_occurrence_matrix
 import summarizer
 from models.model import KnowledgeEmbed
 import configparser
@@ -71,6 +71,7 @@ def load_config(file_path):
 	config['num_sample'] = int(config['num_sample'])
 	config['gpu'] = int(config['gpu'])
 	config['topk'] = int(config['topk'])
+	config['expan'] = 0
 	config['preprocess'] = json.loads(config['preprocess'].lower())
 	return config
 
@@ -83,12 +84,11 @@ if __name__ == '__main__':
 		if config['preprocess']:
 			graph_builder = textGraph(None)
 			graph_builder.load_stopwords('/shared/data/qiz3/text_summ/data/stopwords.txt')
-			#graph_builder._load_corpus('/shared/data/qiz3/text_summ/data/NYT_sports.txt')
 			print("Loading Hierarchies")
 			text_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.txt'.format(config['dataset'])
 			json_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.json'.format(config['dataset'])
 			#config['dataset']
-			if False:
+			if config['expan'] == 0:
 				h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], 'NYT_full'), 'rb'))
 				sports = pickle.load(open("hierarchy_sports.p", 'rb'))
 				h_ = pickle.load(open('topic_hierarchy.p', 'rb'))
@@ -101,9 +101,8 @@ if __name__ == '__main__':
 					concept.construct_concepts(con_config, True)
 					concepts.append(concept)
 				#print(concepts[0].links)
+				#TODO(@jingjing): modify the hierarchy, current disaster is not good.
 				del concepts[0].links['military']
-				#concepts[0].links['military'] = ['military_']
-				#concepts[0].links['military_'] = ['politics']
 
 				concept = Concept(h)
 				concept.construct_concepts([(u'Science', 2), 2])
@@ -112,49 +111,27 @@ if __name__ == '__main__':
 				concept = Concept(sports)
 				concept.construct_concepts([(u'type of sport', 2), 2])
 				concepts.append(concept)
-
-			'''
-			concept = Concept(sports)
-			concept.root = (u'type of sport', 2)
-			concept.links = {
-				'soccer': ['type_of_sport|soccer'],
-				'basketball': ['type_of_sport|basketball'],
-				'baseball': ['type_of_sport|baseball'],
-				'football': ['type_of_sport|football'],
-				'tennis': ['type_of_sport|tennis'],
-				'golf': ['type_of_sport|golf'],
-				'hockey': ['type_of_sport|hockey']
-			}
-			concepts.append(concept)
-			'''
-				# concept.output_concepts('concepts.txt')
-			concepts = pickle.load(open("{}_{}_concepts.p".format(config['method'], config['dataset']), 'rb'))
-			#embed()
+			else:
+				concepts = pickle.load(open("{}_{}_expan-{}_concepts.p".format(config['method'], config['dataset'], config['expan']), 'rb'))
 			graph_builder.load_corpus(text_path)
 			graph_builder.normalize_text()
-			keywords = graph_builder.load_concepts(concepts, skip_option = True, expan =True)
-			graph_builder.dump_linked_ids("{}_{}_linked_ids.p".format(config['dataset'], config['id']))
-			#embed()
-			#print(keywords)
-			#print(graph_builder.label2id)
-			if False:
-				for concept in concepts:
-					concept.clean_concept()
-				pickle.dump(concepts, open("{}_{}_concepts.p".format(config['method'], config['dataset']), 'wb'))
-			sys.exit(-1)
+			#skip_option = True means we only embed documents that have linked phrases
+			keywords = graph_builder.load_concepts(concepts, skip_option = True, expan = config['expan'] > 0)
+			#it stores documents are not linked in current expansion step
+			graph_builder.dump_linked_ids("{}_expan-{}_linked_ids.p".format(config['dataset'], config['expan']))
+			
 			graph_builder.build_dictionary()
 			graph_builder.text_to_numbers()
 			X, num_docs, num_words, num_labels = graph_builder.buildTrain(method=config['method'])
 			
 			save_point = {'X': X, 'num_labels':num_labels, 'num_docs':num_docs, 'num_words':num_words}
 			
-			graph_builder.dump_mapping("{}_mapping.txt".format(config['dataset']))
+			graph_builder.dump_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
 			graph_builder.dump_label("{}_label.p".format(config['dataset']))
-			#graph_builder.dump_linked_ids("{}_linked_ids.p".format(config['dataset']))
-			pickle.dump(save_point, open("{}_{}.p".format(config['method'], config['dataset']), 'wb'))
+			pickle.dump(save_point, open("{}_{}_expan-{}.p".format(config['method'], config['dataset'], config['expan']), 'wb'))
 			
 		else:
-			save_point = pickle.load(open("{}_{}.p".format(config['method'], config['dataset']), 'rb'))
+			save_point = pickle.load(open("{}_{}_expan-{}.p".format(config['method'], config['dataset'], config['expan']), 'rb'))
 			X = save_point['X']
 			num_docs = save_point['num_docs']
 			num_words = save_point['num_words']
@@ -164,18 +141,16 @@ if __name__ == '__main__':
 		print("Training Embedding")
 		embedder.Train(config, X, [num_words, num_docs, num_labels])
 	elif config['stage'] == 'examine':
-		# this block is for iteratively training and finetune part 
+		# this block is for label expansion
 		
 		graph_builder = textGraph()
-		graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+		#load previous step dictionary mapping
+		graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
 		graph_builder.load_label("{}_label.p".format(config['dataset']))
-		#graph_builder.load_label("NYT_full_lead-3_example_label.p")
 		
-		graph_builder.load_linked_ids("{}_{}_linked_ids.p".format(config['dataset'], config['id']))
-		concepts = pickle.load(open("{}_{}_concepts.p".format(config['method'], config['dataset']), 'rb'))
+		graph_builder.load_linked_ids("{}_expan-{}_linked_ids.p".format(config['dataset'], config['expan']))
+		concepts = pickle.load(open("{}_{}_expan-{}_concepts.p".format(config['method'], config['dataset'], config['expan'] - 1), 'rb'))
 		print(graph_builder.label2id)
-		#embed()
-		sys.exit(-1)
 		if True:
 			model = load_model(config)
 			doc2emb = model.doc_embeddings()
@@ -194,22 +169,24 @@ if __name__ == '__main__':
 			phrase2emb = load_phrase_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/p.vec')
 		
 		doc_assignment,top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
-		docs_info = []
-		with open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json') as meta_json:
-			for idx,line in tqdm(enumerate(meta_json)):
-				tmp = json.loads(line)
-				docs_info.append({'title': tmp['title'], 'type': tmp['type']})
-		#top_label_assignment = pickle.load(open('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/src/sib.dump' ,'rb'))
-		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/nyt_lead_3.txt')
+		# for checking top-k relevant documents
+		if False:
+			docs_info = []
+			with open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json') as meta_json:
+				for idx,line in tqdm(enumerate(meta_json)):
+					tmp = json.loads(line)
+					docs_info.append({'title': tmp['title'], 'type': tmp['type']})
+			#top_label_assignment = pickle.load(open('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/src/sib.dump' ,'rb'))
+			document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
 
-		'''
-		for k in top_label_assignment:
-			with open('{}{}_epoch{}_{}_docs.txt'.format('/shared/data/qiz3/text_summ/text_summarization/results/', config['id'], config['epoch_number'], k), 'w') as OUT:
-				for doc in top_label_assignment[k][:100]:
-					docs_info[doc[0]]['score'] = str(doc[1])
-					OUT.write(json.dumps(docs_info[doc[0]]) + '\n')
-		'''
-		#print(top_label_assignment.keys())
+			'''
+			for k in top_label_assignment:
+				with open('{}{}_epoch{}_{}_docs.txt'.format('/shared/data/qiz3/text_summ/text_summarization/results/', config['id'], config['epoch_number'], k), 'w') as OUT:
+					for doc in top_label_assignment[k][:100]:
+						docs_info[doc[0]]['score'] = str(doc[1])
+						OUT.write(json.dumps(docs_info[doc[0]]) + '\n')
+			'''
+
 		hierarchy = simple_hierarchy()
 		for idx,h in enumerate(hierarchy.keys()):
 			print(idx, h)
@@ -224,27 +201,35 @@ if __name__ == '__main__':
 					if sibs != twin:
 						siblings_docs.append([x[0] for x in top_label_assignment[sibs][:100]])
 
-				phrase2idx, idx2phrase = build_in_domain_dict(docs, document_phrase_cnt)
-				scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx, option = 'A')
-				
-				#expan_terms = expand(label2emb[twin], model, graph_builder.name2id, ranked_list[:10])
-				if False:
+				phrase2idx, idx2phrase = build_background_dict(docs, document_phrase_cnt)
+				#TODO(@jingjing): _generate_caseOLAP_scores can not work currently, because it conflict with generate_caseOLAP_scores in test mode, see PhraseExtractor's todo.
+				scores, ranked_list = _generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx, option = 'A')
+				print('concept:{}, category:{}, key phrases:{}'.format(h, twin, ranked_list[:30]))
+				if config['expan'] > 0:
+					expan_terms = expand(label2emb[twin], model, graph_builder.name2id, ranked_list[:10])
 					seed_cnt = 0
 					#print(concepts[idx].clean_links)
 					for l in concepts[idx].clean_links:
 						if concepts[idx].clean_links[l] == twin:
 							seed_cnt += 1
+					expanded_seeds = []
 					for seed in expan_terms:
 						if seed_cnt >= 6:
 							break
 						if seed[0] not in concepts[idx].clean_links:
 							concepts[idx].clean_links[seed[0]] = twin
 							seed_cnt += 1
+							expanded_seeds.append(seed[0])
+				print('concept:{}, category:{}, expanded seeds:{}'.format(h, twin, expanded_seeds))
 				#print(concepts[idx].clean_links)
-				print('concept:{}, category:{}, key phrases:{}'.format(h, twin, ranked_list[:30]))
+				
 
 			embed()
-		#pickle.dump(concepts, open("{}_{}_expan_concepts.p".format(config['method'], config['dataset']), 'wb'))
+		if True:
+			for concept in concepts:
+				concept.clean_concept()
+			pickle.dump(concepts, open("{}_{}_expan-{}_concepts.p".format(config['method'], config['dataset'], config['expan'] + 1), 'wb'))
+		#pickle.dump(concepts, open("{}_{}_expan-concepts.p".format(config['method'], config['dataset']), 'wb'))
 		embed()
 
 		'''
@@ -261,14 +246,16 @@ if __name__ == '__main__':
 	elif config['stage'] == 'test':
 	# Find concentrated concepts and specific common sense node
 		graph_builder = textGraph(None)
-		graph_builder.load_linked_ids("{}_linked_ids.p".format(config['dataset']))
+		graph_builder.load_linked_ids("{}_expan-{}_linked_ids.p".format(config['dataset'], config['expan']))
 		graph_builder.load_stopwords('/shared/data/qiz3/text_summ/data/stopwords.txt')
-		graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+		graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
 		graph_builder.load_label("{}_label.p".format(config['dataset']))
 		with open(config['input_file']) as IN:
 			input_docs = []
 			docs = []
 			for line in IN:
+				#print(line)
+				#sys.exit(-1)
 				line = line.strip()
 				phrases = re.findall("<phrase>(.*?)</phrase>", line)
 				#print(phrases)
@@ -278,23 +265,18 @@ if __name__ == '__main__':
 				input_docs.append(' '.join([p.replace(' ', '_').lower() for p in phrases]))
 				docs.append(graph_builder.normalize(line))
 				#break
-		print(len(input_docs))
-		
-
-		feature_vectors, vectorizer = tf_idf_vectorizer('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
-		results = summarizer.compare(config, input_docs, feature_vectors, vectorizer, graph_builder.skip_doc)
-		#results = summarizer.compare(config, input_docs, feature_vectors, vectorizer)
+		print(config['input_file'], len(input_docs), len(docs))
 
 		
-		# OUT = open("intermediate_data/{}_{}_set{}.txt".format(config['summ_method'], config['dataset'], idx), 'w')
-		# FILELIST.write("intermediate_data/{}_{}_set{}.txt\n".format(config['summ_method'], config['dataset'], idx))
 
-		# OUT.write(' '.join(map(str, docs)) + '\n')
-		# for r in ranked_list:
-		# 	OUT.write("{} {}\n".format(r[0], r[1]))
-		#sys.exit(-1)
-
-		if True: #KNN module trial
+		#TODO(@jingjing): add weighted average embedding for comparative search(route 2 in the slides)
+		if config['comparative_opt'] == 'knn': #KNN comparative search, route 0 and route 1
+			feature_vectors, vectorizer = tf_idf_vectorizer('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+			#comparative documents
+			results = summarizer.compare(config, input_docs, feature_vectors, vectorizer, graph_builder.skip_doc)
+			#results = summarizer.compare(config, input_docs, feature_vectors, vectorizer)
+			#print(results)
+			document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
 			graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
 			graph_builder.load_label("{}_label.p".format(config['dataset']))
 
@@ -322,8 +304,8 @@ if __name__ == '__main__':
 				#print(idx, doc_assignment[idx])
 			
 
-			#category = max(count.items(), key=operator.itemgetter(1))[0]
-			category = 'election_'
+			category = max(count.items(), key=operator.itemgetter(1))[0]
+			#category = 'election_'
 			print("category distribution:{}, inferred topic is {}".format(count, category))
 
 			hierarchy = simple_hierarchy()
@@ -335,7 +317,7 @@ if __name__ == '__main__':
 			siblings_docs = [list(map(lambda x:x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings if l != category]
 			twin_docs = list(map(lambda x:x[0], top_label_assignment[category][:config['topk']]))
 
-		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+		
 		summarizer.summary(config, docs, siblings_docs, twin_docs, document_phrase_cnt, inverted_index)
 			
 			#break

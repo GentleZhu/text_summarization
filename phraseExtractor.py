@@ -88,12 +88,16 @@ class phraseExtractor:
         self.document_phrase_cnt = document_phrase_cnt
         self.inverted_index = inverted_index
 
-        self.avg_dl = sum([self._get_sibling_phrase_cnt(sibling_cell) for sibling_cell in self.sibling_groups])
+        #TODO(@jingjing): below lines need a swtich, one for label-expansion, one for summarization purpose
+        #self.avg_dl = sum([self._get_sibling_phrase_cnt(sibling_cell) for sibling_cell in self.sibling_groups])
         self.avg_dl += self._get_target_phrase_cnt(self.target_docs)
+        self.avg_dl += self._get_sibling_phrase_cnt(self.target_docs)
         self.avg_dl /= (len(self.sibling_groups) + 1)
 
     def _calculate_sibling_max_df(self):
+        #TODO(@jingjing): below lines need a swtich, see above
         max_dfs = [self._calculate_target_max_df(self.target_docs)]
+        #max_dfs = [self._calculate_max_df(self.target_docs)]
         for sibling in self.sibling_groups:
             max_dfs.append(self._calculate_max_df(sibling))
         self.max_dfs = max_dfs
@@ -146,7 +150,48 @@ class phraseExtractor:
             raise NotImplementedError
         return score
 
-    def compute_scores(self, document_phrase_cnt, inverted_index, score_option):
+    # this function is for label expansion
+    def __compute_entity_score(self, entity, score_option):
+        current_df = sum([1 if self.inverted_index[entity][doc_id] > 0 else 0 for doc_id in self.target_docs])
+        score_list = []
+        context_group = [(self._get_sibling_phrase_cnt(self.target_docs), current_df)]
+        for sibling_group in self.sibling_groups:
+            df = sum([1 if self.inverted_index[entity][doc_id] > 0 else 0 for doc_id in sibling_group])
+            context_group.append((self._get_sibling_phrase_cnt(sibling_group), df))
+        for idx, g in enumerate(context_group):
+            if idx == 0:
+                score_list.append(self.bm25_df_paper(g[1], self.max_dfs[idx],
+                                                     self._calculate_tf(entity, self.target_docs), g[0], self.avg_dl))
+            else:
+                score_list.append(self.bm25_df_paper(g[1], self.max_dfs[idx],
+                                                     self._calculate_tf(entity, self.sibling_groups[idx - 1]), g[0], self.avg_dl))
+        score_list = self.softmax_paper(score_list)
+
+        distinctiveness = score_list[0]
+        popularity = math.log(1 + self.entity2freq[entity], 2)
+        if score_option == 'A':
+            score = popularity * distinctiveness
+        elif score_option == 'B':
+            score = distinctiveness
+        elif score_option == 'C':
+            score = popularity
+        elif score_option == 'D':
+            int_score = self.int_score[entity] if entity in self.int_score else 0.3
+            score = popularity * distinctiveness * int_score
+        elif score_option == 'E':
+            int_score = self.int_score[entity] if entity in self.int_score else 0.3
+            score = int_score
+        elif score_option == 'F':
+            int_score = self.int_score[entity] if entity in self.int_score else 0.3
+            score = int_score * distinctiveness
+        elif score_option == 'H':
+            int_score = self.int_score[entity] if entity in self.int_score else 0.3
+            score = int_score * popularity
+        else:
+            raise NotImplementedError
+        return score
+
+    def compute_scores(self, document_phrase_cnt, inverted_index, score_option, mode = 0):
         # score_option: A. popularity+distinc;
         #               B. distinc
         #               C. popularity
@@ -166,7 +211,10 @@ class phraseExtractor:
                 #if '_' not in entity:
                 #    score = 0.
             else:
-                score = self._compute_entity_score(entity, score_option)
+                if mode == 0:
+                    score = self._compute_entity_score(entity, score_option)
+                elif mode == 1:
+                    score = self.__compute_entity_score(entity, score_option)
             self.ranked_list.append((entity, score))
 
         self.ranked_list = sorted(self.ranked_list, key=lambda t: -t[1])

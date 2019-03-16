@@ -112,7 +112,7 @@ class textGraph(object):
     
     
     def normalize(self, text):
-        text = text.lower()
+        text = ''.join(c for c in text.lower() if c not in '0123456789')
         return [word.strip(string.punctuation) for word in text.split() if word not in (self.stopwords)]
         #return(texts)
 
