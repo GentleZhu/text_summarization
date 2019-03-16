@@ -1,36 +1,38 @@
-# Knowledgeable Multi-doc Summarization
+# Background-Aware Multi-doc Summarization
 ## What is a concept
 Concept is hierarchical relationships between entities, which is defined as <root_node, list of relations(top-down)>, e.g. <sports team, [subclas of, instance of]>.
-One topdown path of above concept could be `sports team - Basketball Team - Los Angels Lakers`
+In this work, we simplify the relation only hypernym, i.e. *is a*.
+One topdown path of above concept could be `Science - Astronomy - planet`
 ## How to use concept to psedo-link a corpus
 ```
 concept = Concept(h)
 concept.construct_concepts([(u'type of sport', 2), [2,4]])
 ```
 
-## Run and configuration
+## Configuration
+On dmserv5, using qiz3
 ```
-python summ_pipeline.py
+source activate kprnn
 ```
 
-## Assign background corpus to category of interest
-If we want to assign documents to one dimension, for example, sports "baseball, basketball, football and etc.". We will just need top@k relevant documents to these category nodes.
-
-## Build in-domain dictionary
-By diversified ranking between twin documents and sibling documents, we obtain vocabulary for target documents. Usage(TODO:@Jingjing)
-
-## Comparative and Contrastive Analysis
-We conduct summarization based on twin and target documents.
-Currently the output is just ranked list based on w_i(freq difference) and n_i(coverage in target), calculated in function "contrastive_analysis", and haven't implemented redundancy part.
+## Iteratively document categorization and label expansion
+### Document categorization
+parameters: {expan: 0/1/2...}, 0 means link using original hierarchy, 1/2/.. will load. preprocess=True means link the corpus, otherwise use dumped training data to train embedding directly. 
 ```
-python summarizer.py
+python3 summ_pipeline.py train_config
 ```
+### Label expansion
+First set expan = 0, it will store new concepts with suffix expan = 1, see code for details.
+```
+python3 summ_pipeline.py examine_config
+```
+After expansion, re-run document categorization with expan += 1 in config.
+
+## Comparative Summarization
+```
+python3 summ_pipeline.py test_config
+```
+Current default setting 'comparative_opt' = KNN, which is route0 and route1.
 
 ## Evaluation
-### Single document summarization
-Although not that neccesarry, we keep single document summarization as our side experiments.
-
-### Multiple document summarization
-```
-python evaluation/summ_eval.py eval-multi intermediate_data/textrank_NYT_full_filelist.txt
-```
+Multi-facet summarization annotation protocol, details TBD.
