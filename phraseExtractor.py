@@ -84,23 +84,40 @@ class phraseExtractor:
         assert max_df > 0
         return max_df 
 
-    def load_freq_data(self, document_phrase_cnt, inverted_index):
+    def load_freq_data(self, document_phrase_cnt, inverted_index, option='id'):
+        #option->raw: list of strings, id: list of ids
         self.document_phrase_cnt = document_phrase_cnt
         self.inverted_index = inverted_index
 
         #TODO(@jingjing): below lines need a swtich, one for label-expansion, one for summarization purpose
         #self.avg_dl = sum([self._get_sibling_phrase_cnt(sibling_cell) for sibling_cell in self.sibling_groups])
-        self.avg_dl += self._get_target_phrase_cnt(self.target_docs)
-        self.avg_dl += self._get_sibling_phrase_cnt(self.target_docs)
-        self.avg_dl /= (len(self.sibling_groups) + 1)
+        if option == 'id':
+            self.avg_dl = sum([self._get_sibling_phrase_cnt(sibling_cell) for sibling_cell in self.sibling_groups])
+            self.avg_dl += self._get_sibling_phrase_cnt(self.target_docs)
+            self.avg_dl /= (len(self.sibling_groups) + 1)
+        elif option == 'raw':
+            self.avg_dl = self._get_target_phrase_cnt(self.target_docs)
+            self.avg_dl += self._get_sibling_phrase_cnt(self.target_docs)
+            self.avg_dl /= (len(self.sibling_groups) + 1)
+        else:
+            raise Exception
 
-    def _calculate_sibling_max_df(self):
+    def _calculate_sibling_max_df(self, option='id'):
+        # option->raw: list of strings, id: list of ids
         #TODO(@jingjing): below lines need a swtich, see above
-        max_dfs = [self._calculate_target_max_df(self.target_docs)]
-        #max_dfs = [self._calculate_max_df(self.target_docs)]
-        for sibling in self.sibling_groups:
-            max_dfs.append(self._calculate_max_df(sibling))
-        self.max_dfs = max_dfs
+        if option == 'id':
+            max_dfs = [self._calculate_max_df(self.target_docs)]
+            for sibling in self.sibling_groups:
+                max_dfs.append(self._calculate_max_df(sibling))
+            self.max_dfs = max_dfs
+        elif option == 'raw':
+            max_dfs = [self._calculate_target_max_df(self.target_docs)]
+            #max_dfs = [self._calculate_max_df(self.target_docs)]
+            for sibling in self.sibling_groups:
+                max_dfs.append(self._calculate_max_df(sibling))
+            self.max_dfs = max_dfs
+        else:
+            raise Exception
 
     def _calculate_tf(self, entity, group):
         tf = sum([self.inverted_index[entity][doc_id] for doc_id in group])

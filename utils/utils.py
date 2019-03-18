@@ -203,7 +203,7 @@ class textGraph(object):
         self.num_docs = len(self.texts)
 
 
-    def load_concepts(self, concepts, tops = ['politics', 'business', 'disaster', 'science', 'type_of_sport'], skip_option = False, expan=False):
+    def load_concepts(self, concepts, tops = ['politics', 'business', 'disaster', 'science', 'sports'], skip_option = False, expan=False):
         
         concept_keywords = defaultdict(list)
         for concept in concepts:
@@ -902,11 +902,11 @@ def simple_hierarchy():
     #hierarchy['root'] = ['science', 'type_of_sport', 'politics', 'business', 'disaster']
     #hierarchy['root'] = ['science']
     #hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry', 'maths']
-    hierarchy['politics'] = ['gay_right', 'immigration_', 'law_', 'election_', 'gun_control_', ]
-    hierarchy['business'] = ['economy_', 'trade_', 'manufacturing_', 'stocks_and_bonds', ]
-    hierarchy['disaster'] = ['flood_', 'earthquake_', 'drought_', 'human_caused', 'hurricane_', 'wildfire_']
-    hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry']
-    hierarchy['type_of_sport'] = ['american_football', 'ice_hockey', 'association_football', 'golf', 'basketball', 'baseball', 'tennis']
+    hierarchy['politics'] = ['gay_right_', 'immigration_', 'law_', 'election_', 'gun_control_', 'military_']
+    hierarchy['business'] = ['economy_', 'trade_', 'stocks_and_bonds_']
+    hierarchy['disaster'] = ['flood_', 'earthquake_', 'drought_', 'human_caused_', 'hurricane_', 'wildfire_']
+    hierarchy['science'] = ['astronomy_', 'physics_', 'geology_', 'biology_', 'chemistry_']
+    hierarchy['sports'] = ['football_', 'hockey_', 'soccer_', 'golf_', 'basketball_', 'baseball_', 'tennis_']
     
     
     return hierarchy
@@ -998,6 +998,36 @@ def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):
     
     return(batch_data, label_data)
 
+def construct_unified_hierarchy():
+    h = {'disaster': ['flood_', 'wildfire_', 'earthquake_', 'drought_', 'hurricane_', 'human_caused_'],
+         'politics': ['election_', 'immigration_', 'gun_control_', 'gay_right_', 'law_', 'military_'],
+         'business': ['stocks_and_bonds_', 'trade_', 'economy_'],
+         'science': ['astronomy_', 'physics_', 'geology_', 'biology_', 'chemistry_'],
+         'sports': ['football_', 'hockey_', 'soccer_', 'golf_', 'basketball_', 'baseball_', 'tennis_'],
+         'football_': ['football'], 'hockey_': ['hockey'], 'soccer_': ['soccer'], 'golf_': ['golf'],
+         'basketball_': ['basketball'], 'baseball_': ['baseball'], 'tennis_': ['tennis'],
+         'astronomy_': ['astronomy'], 'physics_': ['physics'], 'geology_': ['geology'], 'biology_': ['biology'],
+         'chemistry_':['chemistry'],
+         'flood_': ['flood'],
+         'wildfire_': ['wildfire'], 'earthquake_': ['earthquake'],
+         'drought_': ['drought'], 'hurricane_': ['hurricane'],
+         'human_caused_': ['shooting', 'bomber', 'massacre'], 'election_': ['election'],
+         'immigration_': ['immigration'], 'gun_control_': ['gun_control'],
+         'gay_right_': ['gay_rights'], 'law_': ['law_enforcement'],
+         'military_': ['military'],
+         'stocks_and_bonds_': ['stock', 'bond'], 'trade_': ['trade'],
+         'economy_': ['economy']}
+    d = []
+    for k in h:
+        for dd in h[k]:
+            if k in ['disaster', 'politics', 'business', 'sports', 'science']:
+                d.append([dd, k, 2])
+            else:
+                d.append([dd, k, 1])
+
+    h = Hierarchy(d, None, None, 'E')
+    h.save_hierarchy('unified_hierarchy.p')
+    return h
 
 def doc_reweight(phrase_embedding, phrase_freq, dist_map, option):
     # phrase_freq: {'phrase_1': x_1, 'phrase_2': x_2,...}

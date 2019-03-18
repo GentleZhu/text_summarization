@@ -27,11 +27,11 @@ def tf_idf_vectorizer(in_file):
 
 def load_model(config):
 
-    save_point = pickle.load(open("{}_{}.p".format(config['method'], config['dataset']), 'rb'))
+    save_point = pickle.load(open("{}_{}_expan-{}.p".format(config['method'], config['dataset'], config['expan']), 'rb'))
     num_docs = save_point['num_docs']
     num_words = save_point['num_words']
     num_labels = save_point['num_labels']
-    
+
 
     #num_labels = 29
 
@@ -90,20 +90,26 @@ if __name__ == '__main__':
 			#config['dataset']
 			if config['expan'] == 0:
 				h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], 'NYT_full'), 'rb'))
-				sports = pickle.load(open("hierarchy_sports.p", 'rb'))
-				h_ = pickle.load(open('topic_hierarchy.p', 'rb'))
+				#sports = pickle.load(open("hierarchy_sports.p", 'rb'))
+				#h_ = pickle.load(open('topic_hierarchy.p', 'rb'))
 
 				concepts = []
 
-				concept_configs = [[('politics', 2), 2], [('business', 2), 2], [('disaster', 2), 2]]
+				concept_configs = [[('politics', 2), 2], [('business', 2), 2], [('disaster', 2), 2],
+								   [('sports', 2), 2], [('science', 2), 2]]
 				for con_config in concept_configs:
-					concept = Concept(h_)
+					concept = Concept(h)
 					concept.construct_concepts(con_config, True)
 					concepts.append(concept)
 				#print(concepts[0].links)
 				#TODO(@jingjing): modify the hierarchy, current disaster is not good.
-				del concepts[0].links['military']
+				#del concepts[0].links['military']
 
+				pickle.dump(concepts, open(
+					"{}_{}_expan-{}_concepts.p".format(config['method'], config['dataset'], config['expan']), 'wb'))
+				print('First concept dumped!')
+
+				'''
 				concept = Concept(h)
 				concept.construct_concepts([(u'Science', 2), 2])
 				concepts.append(concept)
@@ -111,6 +117,7 @@ if __name__ == '__main__':
 				concept = Concept(sports)
 				concept.construct_concepts([(u'type of sport', 2), 2])
 				concepts.append(concept)
+				'''
 			else:
 				concepts = pickle.load(open("{}_{}_expan-{}_concepts.p".format(config['method'], config['dataset'], config['expan']), 'rb'))
 			graph_builder.load_corpus(text_path)
@@ -142,14 +149,15 @@ if __name__ == '__main__':
 		embedder.Train(config, X, [num_words, num_docs, num_labels])
 	elif config['stage'] == 'examine':
 		# this block is for label expansion
-		
+
+		print(config)
 		graph_builder = textGraph()
 		#load previous step dictionary mapping
 		graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
 		graph_builder.load_label("{}_label.p".format(config['dataset']))
 		
 		graph_builder.load_linked_ids("{}_expan-{}_linked_ids.p".format(config['dataset'], config['expan']))
-		concepts = pickle.load(open("{}_{}_expan-{}_concepts.p".format(config['method'], config['dataset'], config['expan'] - 1), 'rb'))
+		concepts = pickle.load(open("{}_{}_expan-{}_concepts.p".format(config['method'], config['dataset'], config['expan']), 'rb'))
 		print(graph_builder.label2id)
 		if True:
 			model = load_model(config)
@@ -177,15 +185,15 @@ if __name__ == '__main__':
 					tmp = json.loads(line)
 					docs_info.append({'title': tmp['title'], 'type': tmp['type']})
 			#top_label_assignment = pickle.load(open('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/src/sib.dump' ,'rb'))
-			document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
 
-			'''
-			for k in top_label_assignment:
-				with open('{}{}_epoch{}_{}_docs.txt'.format('/shared/data/qiz3/text_summ/text_summarization/results/', config['id'], config['epoch_number'], k), 'w') as OUT:
-					for doc in top_label_assignment[k][:100]:
-						docs_info[doc[0]]['score'] = str(doc[1])
-						OUT.write(json.dumps(docs_info[doc[0]]) + '\n')
-			'''
+		'''
+		for k in top_label_assignment:
+			with open('{}{}_epoch{}_{}_docs.txt'.format('/shared/data/qiz3/text_summ/text_summarization/results/', config['id'], config['epoch_number'], k), 'w') as OUT:
+				for doc in top_label_assignment[k][:100]:
+					docs_info[doc[0]]['score'] = str(doc[1])
+					OUT.write(json.dumps(docs_info[doc[0]]) + '\n')
+		'''
 
 		hierarchy = simple_hierarchy()
 		for idx,h in enumerate(hierarchy.keys()):
@@ -205,7 +213,7 @@ if __name__ == '__main__':
 				#TODO(@jingjing): _generate_caseOLAP_scores can not work currently, because it conflict with generate_caseOLAP_scores in test mode, see PhraseExtractor's todo.
 				scores, ranked_list = _generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx, option = 'A')
 				print('concept:{}, category:{}, key phrases:{}'.format(h, twin, ranked_list[:30]))
-				if config['expan'] > 0:
+				if config['expan'] >= 0:
 					expan_terms = expand(label2emb[twin], model, graph_builder.name2id, ranked_list[:10])
 					seed_cnt = 0
 					#print(concepts[idx].clean_links)
@@ -220,8 +228,8 @@ if __name__ == '__main__':
 							concepts[idx].clean_links[seed[0]] = twin
 							seed_cnt += 1
 							expanded_seeds.append(seed[0])
-				print('concept:{}, category:{}, expanded seeds:{}'.format(h, twin, expanded_seeds))
-				#print(concepts[idx].clean_links)
+					print('concept:{}, category:{}, expanded seeds:{}'.format(h, twin, expanded_seeds))
+					#print(concepts[idx].clean_links)
 				
 
 			embed()
