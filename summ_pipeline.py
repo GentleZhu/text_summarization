@@ -3,6 +3,8 @@ from utils.WikidataLinker_mg import WikidataLinker
 from tqdm import tqdm
 from utils.utils import *
 import pickle, torch
+from scipy import spatial
+from collections import defaultdict
 from phraseExtractor import phraseExtractor
 sys.path.append('./models/')
 import embedder
@@ -274,7 +276,6 @@ if __name__ == '__main__':
 				docs.append(graph_builder.normalize(line))
 				#break
 		print(config['input_file'], len(input_docs), len(docs))
-
 		
 
 		#TODO(@jingjing): add weighted average embedding for comparative search(route 2 in the slides)
@@ -325,12 +326,62 @@ if __name__ == '__main__':
 			siblings_docs = [list(map(lambda x:x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings if l != category]
 			twin_docs = list(map(lambda x:x[0], top_label_assignment[category][:config['topk']]))
 
+
+		elif config['comparative_opt'] == 'weighted_avg':
+			model = load_model(config)
+			word_embs =  model.input_embeddings()
+			phrase2emb = {graph_builder.id2name[x]:word_embs[x]
+						  for x in tqdm(range(word_embs.shape[0]))}
+			phrase_freq = defaultdict(int)
+			for doc in docs:
+				for phrase in doc:
+					phrase_freq[phrase] += 1
+			new_emb = doc_reweight(phrase2emb, phrase_freq, None, 'A')
+
+			doc2emb = model.doc_embeddings()
+			# print(model.doc_embeddings().shape)
+			# print(model.input_embeddings().shape)
+			label2emb = dict()
+
+			for k in graph_builder.label2id:
+				# for k in siblings:
+				label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy()
+
+			document_phrase_cnt, inverted_index = collect_statistics(
+				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+			graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
+			graph_builder.load_label("{}_label.p".format(config['dataset']))
+			doc_assignment, top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
+
+			category = None
+			sim_max = -1
+			for label in label2emb:
+				sim = 1 - spatial.distance.cosine(new_emb, label2emb[label])
+				if sim > sim_max:
+					sim_max = sim
+					category = label
+
+			print('New docs assigned to ' + category)
+
+			hierarchy = simple_hierarchy()
+			for h in hierarchy:
+				if category in hierarchy[h]:
+					all_siblings = hierarchy[h]
+					break
+
+			siblings_docs = [list(map(lambda x: x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings
+							 if l != category]
+			twin_docs = list(map(lambda x: x[0], top_label_assignment[category][:config['topk']]))
+
+			embed()
+			exit()
 		
 		summarizer.summary(config, docs, siblings_docs, twin_docs, document_phrase_cnt, inverted_index)
 			
 			#break
 
 		#pickle.dump(phrase_scores, open('baselines/sentence_summ/phrase_scores.p', 'wb'))
+
 	elif config['stage'] == 'finetune':
 		t.cuda.set_device(int(config['gpu']))
 		if config['preprocess']:

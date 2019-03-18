@@ -1051,18 +1051,19 @@ def doc_reweight(phrase_embedding, phrase_freq, dist_map, option):
 
 def avg_emb_with_distinct(phrase_freq, embs_from, dist_map, vec_size):
 
-	avg_emb = np.zeros(vec_size)
-	t_weight = 0
+    avg_emb = np.zeros(vec_size)
+    t_weight = 0
 
-	for key, value in phrase_freq.items():
-		t_emb = embs_from[key]
-		w = value * dist_map[key]
-		avg_emb += w * t_emb
-		t_weight += w
+    for key, value in phrase_freq.items():
+        if key not in embs_from:
+            continue
+        t_emb = embs_from[key]
+        w = value * dist_map[key]
+        avg_emb += w * t_emb
+        t_weight += w
+    avg_emb /= t_weight
 
-	avg_emb /= t_weight
-
-	return avg_emb
+    return avg_emb
 
 def generate_relations():
     all_relations = []
