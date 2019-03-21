@@ -73,7 +73,7 @@ def load_config(file_path):
 	config['num_sample'] = int(config['num_sample'])
 	config['gpu'] = int(config['gpu'])
 	config['topk'] = int(config['topk'])
-	config['expan'] = 0
+	config['expan'] = int(config['expan'])
 	config['preprocess'] = json.loads(config['preprocess'].lower())
 	return config
 
@@ -84,6 +84,7 @@ if __name__ == '__main__':
 	print(config)
 	if config['stage'] == 'train':
 		if config['preprocess']:
+			embed()
 			graph_builder = textGraph(None)
 			graph_builder.load_stopwords('/shared/data/qiz3/text_summ/data/stopwords.txt')
 			print("Loading Hierarchies")
@@ -107,9 +108,6 @@ if __name__ == '__main__':
 				#TODO(@jingjing): modify the hierarchy, current disaster is not good.
 				#del concepts[0].links['military']
 
-				pickle.dump(concepts, open(
-					"{}_{}_expan-{}_concepts.p".format(config['method'], config['dataset'], config['expan']), 'wb'))
-				print('First concept dumped!')
 
 				'''
 				concept = Concept(h)
@@ -138,7 +136,12 @@ if __name__ == '__main__':
 			graph_builder.dump_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
 			graph_builder.dump_label("{}_label.p".format(config['dataset']))
 			pickle.dump(save_point, open("{}_{}_expan-{}.p".format(config['method'], config['dataset'], config['expan']), 'wb'))
-			
+			if config['expan'] == 0:
+				for concept in concepts:
+					concept.clean_concept()
+
+				pickle.dump(concepts, open("{}_{}_expan-{}_concepts.p".format(config['method'], config['dataset'], config['expan']), 'wb'))
+				print('First concept dumped!')
 		else:
 			save_point = pickle.load(open("{}_{}_expan-{}.p".format(config['method'], config['dataset'], config['expan']), 'rb'))
 			X = save_point['X']
@@ -152,7 +155,7 @@ if __name__ == '__main__':
 	elif config['stage'] == 'examine':
 		# this block is for label expansion
 
-		print(config)
+		#t.cuda.set_device(int(config['gpu']))
 		graph_builder = textGraph()
 		#load previous step dictionary mapping
 		graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
@@ -160,6 +163,8 @@ if __name__ == '__main__':
 		
 		graph_builder.load_linked_ids("{}_expan-{}_linked_ids.p".format(config['dataset'], config['expan']))
 		concepts = pickle.load(open("{}_{}_expan-{}_concepts.p".format(config['method'], config['dataset'], config['expan']), 'rb'))
+		for concept in concepts:
+			print(concept.output_tuple)
 		print(graph_builder.label2id)
 		if True:
 			model = load_model(config)
@@ -172,12 +177,12 @@ if __name__ == '__main__':
 			#for k in siblings:
 			    label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
 			print(len(graph_builder.skip_doc))
-			
+
 		else:
 			doc2emb = load_doc_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/d_expan.vec')
 			label2emb = load_label_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/l_expan.vec')
 			phrase2emb = load_phrase_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/p.vec')
-		
+
 		doc_assignment,top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
 		# for checking top-k relevant documents
 		if False:
@@ -200,6 +205,7 @@ if __name__ == '__main__':
 		hierarchy = simple_hierarchy()
 		for idx,h in enumerate(hierarchy.keys()):
 			print(idx, h)
+			continue
 			if h == 'root' :
 				continue
 			for twin in hierarchy[h]:
@@ -234,10 +240,7 @@ if __name__ == '__main__':
 					#print(concepts[idx].clean_links)
 				
 
-			embed()
 		if True:
-			for concept in concepts:
-				concept.clean_concept()
 			pickle.dump(concepts, open("{}_{}_expan-{}_concepts.p".format(config['method'], config['dataset'], config['expan'] + 1), 'wb'))
 		#pickle.dump(concepts, open("{}_{}_expan-concepts.p".format(config['method'], config['dataset']), 'wb'))
 		embed()

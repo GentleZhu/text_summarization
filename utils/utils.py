@@ -598,10 +598,10 @@ class Concept:
                 candidates.append([p, self.count[p]])
             candidates.sort(key=lambda x:x[1], reverse=True)
             for kw in candidates[:3]:
-                if kw[0] in self.labels:
-                    self.clean_links[kw[0]] = kw[0]
-                else:
-                    self.clean_links[kw[0]] = self.links[kw[0]][0]
+                #if kw[0] in self.labels:
+                #    self.clean_links[kw[0]] = kw[0]
+                #else:
+                self.clean_links[kw[0]] = self.links[kw[0]][0]
         for kw in self.labels:
             if kw in self.links:
                 self.output_tuple.append([kw, self.links[kw][0]])
@@ -628,11 +628,15 @@ class Concept:
         return linked_nodes
 
     def clean_concept(self):
-        del self.count
-        del self.seeds
-        del self.links
+        if self.count:
+            del self.count
+        if self.seeds:
+            del self.seeds
+        if self.links:
+            del self.links
         #del self.labels
-        del self.hierarchy
+        if self.hierarchy:
+            del self.hierarchy
 
     def _link_corpus(self, phrases):
         #print(self.links)
@@ -902,10 +906,10 @@ def simple_hierarchy():
     #hierarchy['root'] = ['science', 'type_of_sport', 'politics', 'business', 'disaster']
     #hierarchy['root'] = ['science']
     #hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry', 'maths']
-    hierarchy['politics'] = ['gay_right_', 'immigration_', 'law_', 'election_', 'gun_control_', 'military_']
-    hierarchy['business'] = ['economy_', 'trade_', 'stocks_and_bonds_']
     hierarchy['disaster'] = ['flood_', 'earthquake_', 'drought_', 'human_caused_', 'hurricane_', 'wildfire_']
     hierarchy['science'] = ['astronomy_', 'physics_', 'geology_', 'biology_', 'chemistry_']
+    hierarchy['politics'] = ['gay_right_', 'immigration_', 'law_', 'election_', 'gun_control_', 'military_']
+    hierarchy['business'] = ['economy_', 'trade_', 'stocks_and_bonds_']
     hierarchy['sports'] = ['football_', 'hockey_', 'soccer_', 'golf_', 'basketball_', 'baseball_', 'tennis_']
     
     
@@ -1004,18 +1008,18 @@ def construct_unified_hierarchy():
          'business': ['stocks_and_bonds_', 'trade_', 'economy_'],
          'science': ['astronomy_', 'physics_', 'geology_', 'biology_', 'chemistry_'],
          'sports': ['football_', 'hockey_', 'soccer_', 'golf_', 'basketball_', 'baseball_', 'tennis_'],
-         'football_': ['football'], 'hockey_': ['hockey'], 'soccer_': ['soccer'], 'golf_': ['golf'],
+         'football_': ['football'], 'hockey_': ['hockey'], 'soccer_': ['soccer', 'fifa', 'world_cup'], 'golf_': ['golf', 'tiger_woods'],
          'basketball_': ['basketball'], 'baseball_': ['baseball'], 'tennis_': ['tennis'],
-         'astronomy_': ['astronomy'], 'physics_': ['physics'], 'geology_': ['geology'], 'biology_': ['biology'],
-         'chemistry_':['chemistry'],
-         'flood_': ['flood'],
-         'wildfire_': ['wildfire'], 'earthquake_': ['earthquake'],
-         'drought_': ['drought'], 'hurricane_': ['hurricane'],
-         'human_caused_': ['shooting', 'bomber', 'massacre'], 'election_': ['election'],
-         'immigration_': ['immigration'], 'gun_control_': ['gun_control'],
-         'gay_right_': ['gay_rights'], 'law_': ['law_enforcement'],
+         'astronomy_': ['astronomy', 'planet', 'comet'], 'physics_': ['physics', 'quantum_computing', 'physicist'], 'geology_': ['geology', 'earth_science', 'geologist'],
+         'biology_': ['biology', 'cancer', 'disease', 'species', 'frog'], 'chemistry_':['chemistry', 'molecule', 'compound'],
+         'flood_': ['flood', 'floodplain', 'flowing_water'],
+         'wildfire_': ['wildfire', 'firefighter', 'wildfires'], 'earthquake_': ['earthquake', 'volcano', 'seismologists'],
+         'drought_': ['drought', 'famine', 'starvation', 'climate'], 'hurricane_': ['hurricane', 'tornado', 'hurricane_katrina'],
+         'human_caused_': ['shooting', 'bomber', 'massacre'], 'election_': ['election', 'presidential_election', 'special_election', 'polling_places'],
+         'immigration_': ['immigration', 'illegal_immigration', 'illegal_immigrants'], 'gun_control_': ['gun_control', 'assault_weapons_ban', 'handguns'],
+         'gay_right_': ['gay_rights', 'gay', 'gay_marriage'], 'law_': ['law_enforcement', 'legislation', 'supreme_court'],
          'military_': ['military'],
-         'stocks_and_bonds_': ['stock', 'bond'], 'trade_': ['trade'],
+         'stocks_and_bonds_': ['stock', 'bond', 'stock_market'], 'trade_': ['trade', 'world_trade_organization', 'free_agent'],
          'economy_': ['economy']}
     d = []
     for k in h:
@@ -1026,7 +1030,7 @@ def construct_unified_hierarchy():
                 d.append([dd, k, 1])
 
     h = Hierarchy(d, None, None, 'E')
-    h.save_hierarchy('unified_hierarchy.p')
+    h.save_hierarchy('KnowledgeEmbed_NYT_full_hierarchies.p')
     return h
 
 def doc_reweight(phrase_embedding, phrase_freq, dist_map, option):
