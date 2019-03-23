@@ -84,7 +84,7 @@ if __name__ == '__main__':
 	print(config)
 	if config['stage'] == 'train':
 		if config['preprocess']:
-			embed()
+			#embed()
 			graph_builder = textGraph(None)
 			graph_builder.load_stopwords('/shared/data/qiz3/text_summ/data/stopwords.txt')
 			print("Loading Hierarchies")
@@ -205,7 +205,6 @@ if __name__ == '__main__':
 		hierarchy = simple_hierarchy()
 		for idx,h in enumerate(hierarchy.keys()):
 			print(idx, h)
-			continue
 			if h == 'root' :
 				continue
 			for twin in hierarchy[h]:
@@ -219,7 +218,7 @@ if __name__ == '__main__':
 
 				phrase2idx, idx2phrase = build_background_dict(docs, document_phrase_cnt)
 				#TODO(@jingjing): _generate_caseOLAP_scores can not work currently, because it conflict with generate_caseOLAP_scores in test mode, see PhraseExtractor's todo.
-				scores, ranked_list = _generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx, option = 'A')
+				scores, ranked_list = _generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx, option = 'D')
 				print('concept:{}, category:{}, key phrases:{}'.format(h, twin, ranked_list[:30]))
 				if config['expan'] >= 0:
 					expan_terms = expand(label2emb[twin], model, graph_builder.name2id, ranked_list[:10])
@@ -283,13 +282,8 @@ if __name__ == '__main__':
 
 		#TODO(@jingjing): add weighted average embedding for comparative search(route 2 in the slides)
 		if config['comparative_opt'] == 'knn': #KNN comparative search, route 0 and route 1
-			feature_vectors, vectorizer = tf_idf_vectorizer('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
-			#comparative documents
-			results = summarizer.compare(config, input_docs, feature_vectors, vectorizer, graph_builder.skip_doc)
-			#results = summarizer.compare(config, input_docs, feature_vectors, vectorizer)
-			#print(results)
 			document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
-			graph_builder.load_mapping("{}_mapping.txt".format(config['dataset']))
+			graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
 			graph_builder.load_label("{}_label.p".format(config['dataset']))
 
 			if True:
@@ -309,6 +303,26 @@ if __name__ == '__main__':
 				label2emb = load_label_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/l.vec')
 
 			doc_assignment,top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
+
+			if config['vec_option'] == 'weighted':
+				word_embs = model.input_embeddings()
+				phrase2emb = {graph_builder.id2name[x]: word_embs[x]
+							  for x in tqdm(range(word_embs.shape[0]))}
+				phrase_freq = defaultdict(int)
+				for doc in docs:
+					for phrase in doc:
+						phrase_freq[phrase] += 1
+				new_emb = doc_reweight(phrase2emb, phrase_freq, None, 'B')
+				results = summarizer.compare(config, None, None, None, new_emb, doc2emb, graph_builder.skip_doc)
+
+			elif config['vec_option'] == 'tfidf':
+				feature_vectors, vectorizer = tf_idf_vectorizer(
+					'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+				# comparative documents
+				results = summarizer.compare(config, input_docs, feature_vectors, vectorizer, None, None,
+											 graph_builder.skip_doc)
+			# results = summarizer.compare(config, input_docs, feature_vectors, vectorizer)
+			# print(results)
 
 			count = defaultdict(int)
 			for idx in results:
@@ -339,7 +353,7 @@ if __name__ == '__main__':
 			for doc in docs:
 				for phrase in doc:
 					phrase_freq[phrase] += 1
-			new_emb = doc_reweight(phrase2emb, phrase_freq, None, 'A')
+			new_emb = doc_reweight(phrase2emb, phrase_freq, None, 'B')
 
 			doc2emb = model.doc_embeddings()
 			# print(model.doc_embeddings().shape)
@@ -359,6 +373,8 @@ if __name__ == '__main__':
 			category = None
 			sim_max = -1
 			for label in label2emb:
+				if '_' not in label:
+					continue
 				sim = 1 - spatial.distance.cosine(new_emb, label2emb[label])
 				if sim > sim_max:
 					sim_max = sim

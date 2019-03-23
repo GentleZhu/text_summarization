@@ -1059,7 +1059,7 @@ def avg_emb_with_distinct(phrase_freq, embs_from, dist_map, vec_size):
     t_weight = 0
 
     for key, value in phrase_freq.items():
-        if key not in embs_from:
+        if key not in embs_from or key not in dist_map:
             continue
         t_emb = embs_from[key]
         w = value * dist_map[key]

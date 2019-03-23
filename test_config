@@ -1,6 +1,6 @@
 [DEFAULT]
 batch_size = 128
-epoch_number = 10
+epoch_number = 20
 emb_size = 100
 kb_emb_size = 100
 num_sample = 5
@@ -8,11 +8,12 @@ gpu = 3
 model_dir = /shared/data/qiz3/text_summ/src/model/
 dataset = NYT_full_lead-3
 method = KnowledgeEmbed
-id = mar16-hie-hinge-lr_0.001
+id = mar19-hie-hinge-lr_0.001
 preprocess = True
-input_file = results/2016_election.txt
+input_file = results/Zika_Virus.txt
 stage = test
 summ_method = textrank
 topk = 100
 expan = 1
-comparative_opt = weighted_avg
+comparative_opt = knn
+vec_option = weighted

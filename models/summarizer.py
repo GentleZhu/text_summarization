@@ -757,25 +757,6 @@ def main():
     embed()
     exit()
 
-def search_nearest_emb(input_embs, bg_doc2emb, skip_doc = None, contain_doc = None):
-    avg_emb = np.mean(input_embs, axis=0)
-    ranked_list = []
-
-    for doc_id in bg_doc2emb:
-        ranked_list.append((int(doc_id), 1 - spatial.distance.cosine(avg_emb, bg_doc2emb[doc_id])))
-    ranked_list = sorted(ranked_list, key=lambda t: -t[1])
-
-    ret = []
-    for t in ranked_list:
-        if skip_doc and t[0] in skip_doc:
-            continue
-        if contain_doc is None or t[0] in contain_doc:
-            ret.append(t[0])
-            if len(ret) >= len(input_embs):
-                break
-
-    return ret
-
 def search_nearest_doc(feature_vectors, vectorizer, target_docs, skip_doc = None, contain_doc = None):
     
     new_vectors = vectorizer.transform(target_docs)
@@ -793,6 +774,24 @@ def search_nearest_doc(feature_vectors, vectorizer, target_docs, skip_doc = None
     ranked_list = sorted(ranked_list, key=lambda t: -t[1])
     topk = tmp.argsort()[::-1].tolist()
     for i in topk:
+        if skip_doc and i in skip_doc:
+            continue
+        if contain_doc is None or i in contain_doc:
+            ranked_list.append(i)
+            if len(ranked_list) >= 50:
+                break
+    return ranked_list
+
+def search_nearest_doc_emb(doc2emb, new_emb, skip_doc=None, contain_doc=None):
+    res_list = []
+    ranked_list = []
+
+    for i in range(doc2emb.shape[0]):
+        res_list.append((i, 1 - spatial.distance.cosine(new_emb, doc2emb[i])))
+    res_list = sorted(res_list, key=lambda t: -t[1])
+
+    for t in res_list:
+        i = t[0]
         if skip_doc and i in skip_doc:
             continue
         if contain_doc is None or i in contain_doc:
@@ -824,8 +823,11 @@ def create_graph_from_matrix(sim, idx2phrase, threshold = 15):
 
 
 
-def compare(config, docs, feature_vectors, vectorizer, skip_doc = None, contain_doc = None):
-    return search_nearest_doc(feature_vectors, vectorizer, docs, skip_doc, contain_doc)
+def compare(config, docs, feature_vectors, vectorizer, new_emb, doc2emb, skip_doc = None, contain_doc = None):
+    if config['vec_option'] == 'tfidf':
+        return search_nearest_doc(feature_vectors, vectorizer, docs, skip_doc, contain_doc)
+    else:
+        return search_nearest_doc_emb(doc2emb, new_emb, skip_doc, contain_doc)
 
 def summary(config, docs, siblings_docs, twin_docs, document_phrase_cnt, inverted_index):
     
