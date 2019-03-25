@@ -357,7 +357,10 @@ if __name__ == '__main__':
 				for phrase in doc:
 					phrase_freq[phrase] += 1
 				phrase_freqs.append(phrase_freq)
-			new_emb = doc_reweight(phrase2emb, phrase_freqs, None, 'B')
+
+			dist_map = pickle.load(open('dist_map.p', 'rb'))
+
+			new_emb = doc_reweight(phrase2emb, phrase_freqs, dist_map, 'B')
 			# results = summarizer.compare(config, None, None, None, new_emb, doc2emb, graph_builder.skip_doc)
 			doc2emb = model.doc_embeddings()
 			# print(model.doc_embeddings().shape)
@@ -367,14 +370,6 @@ if __name__ == '__main__':
 			for k in graph_builder.label2id:
 				# for k in siblings:
 				label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy()
-
-			doc2emb_dict = {i: doc2emb[i] for i in range(doc2emb.shape[0])}
-			new_label2id = {}
-			for t in graph_builder.label2id:
-				if '_' in t:
-					new_label2id[t] = graph_builder.label2id[t]
-			embed()
-			exit()
 
 			document_phrase_cnt, inverted_index = collect_statistics(
 				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')

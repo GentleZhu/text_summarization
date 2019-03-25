@@ -1046,9 +1046,12 @@ def construct_unified_hierarchy():
     h.save_hierarchy('KnowledgeEmbed_NYT_full_hierarchies.p')
     return h
 
-def calculate_distinct_map(label2id, doc2emb, phrase2emb, label2emb, dp_file):
+def calculate_distinct_map(labels, doc2emb, phrase2emb, label2emb, dp_file):
     pd_map = load_dp(dp_file, reverse=True)
     h = unified_h()
+    label2id = {}
+    for idx, label in enumerate(labels):
+        label2id[label] = idx
     normal = False
     for i in range(2):
 
@@ -1057,7 +1060,7 @@ def calculate_distinct_map(label2id, doc2emb, phrase2emb, label2emb, dp_file):
 
         print('============= iter ' + str(i + 1) + ' of dist started.')
 
-        pred_label, doc_score = doc_assignment(doc2emb, label2emb)
+        pred_label, doc_score = doc_assignment(doc2emb, label2emb, labels)
         top_labels = label2id.keys()
 
         uniform_vec = [1.0 / len(top_labels)] * len(top_labels)
@@ -1077,7 +1080,6 @@ def calculate_distinct_map(label2id, doc2emb, phrase2emb, label2emb, dp_file):
             for label in tqdm(top_labels):
                 for t_phrase in h[label]:
                     if t_phrase not in pd_map:
-                        print(t_phrase + ' not in pd_map!')
                         continue
                     for doc in pd_map[t_phrase]:
                         label_to_doc[label].add(doc)
@@ -1097,6 +1099,8 @@ def calculate_distinct_map(label2id, doc2emb, phrase2emb, label2emb, dp_file):
 
         if normal:
             for phrase in phrase2emb:
+                if phrase not in pd_map:
+                    continue
                 p_vec = [0.0] * len(top_labels)
 
                 # if len(pd_map[phrase]) < 100:
@@ -1118,13 +1122,12 @@ def calculate_distinct_map(label2id, doc2emb, phrase2emb, label2emb, dp_file):
                 distinct_map[phrase] = kl
         else:
             for phrase in phrase2emb:
+                if phrase not in pd_map:
+                    continue
                 p_vec = [0.0] * len(top_labels)
 
                 # if len(pd_map[phrase]) < 100:
                 # 	continue
-                if not phrase in pd_map:
-                    print(phrase + ' not in pd_map!')
-                    continue
 
                 for doc in pd_map[phrase]:
                     if doc in docs_used:
@@ -1152,37 +1155,26 @@ def calculate_distinct_map(label2id, doc2emb, phrase2emb, label2emb, dp_file):
         dist_map = distinct_map
     return dist_map
 
-def doc_assignment(doc2emb, label2emb):
+def doc_assignment(doc2emb, label2emb, labels):
 	pred_label = {}
 	doc_score = {}
 
-	for doc in doc2emb:
+	for doc in tqdm(doc2emb):
 		doc_emb = doc2emb[doc]
-		sim_map = classify_doc(doc_emb, label2emb)
+		sim_map = classify_doc(doc_emb, label2emb, labels)
 		pred_label[doc] = sim_map[0][0]
 		doc_score[doc] = sim_map[0][1]
 
 	return pred_label, doc_score
 
-def classify_doc(t_emb, target_embs):
+def classify_doc(t_emb, target_embs, labels):
     sim_map = {}
     for key in target_embs:
-        sim_map[key] = cossim(t_emb, target_embs[key])
+        if key not in labels:
+            continue
+        sim_map[key] = 1 - spatial.distance.cosine(t_emb, target_embs[key])
     sim_map = sorted(sim_map.items(), key=operator.itemgetter(1), reverse=True)
     return sim_map
-
-def cossim(p, q):
-    if len(p) != len(q):
-        print('KL divergence error: p, q have different length')
-
-    p_len = q_len = mix_len = 0
-
-    for i in range(len(p)):
-        mix_len += p[i] * q[i]
-        p_len += p[i] * p[i]
-        q_len += q[i] * q[i]
-
-    return mix_len / (math.sqrt(p_len) * math.sqrt(q_len))
 
 def load_dp(dp_file, reverse=True):
 
