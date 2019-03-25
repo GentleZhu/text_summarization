@@ -202,6 +202,9 @@ if __name__ == '__main__':
 					OUT.write(json.dumps(docs_info[doc[0]]) + '\n')
 		'''
 
+		embed()
+		exit()
+
 		hierarchy = simple_hierarchy()
 		for idx,h in enumerate(hierarchy.keys()):
 			print(idx, h)
@@ -343,18 +346,19 @@ if __name__ == '__main__':
 			siblings_docs = [list(map(lambda x:x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings if l != category]
 			twin_docs = list(map(lambda x:x[0], top_label_assignment[category][:config['topk']]))
 
-
 		elif config['comparative_opt'] == 'weighted_avg':
 			model = load_model(config)
 			word_embs =  model.input_embeddings()
 			phrase2emb = {graph_builder.id2name[x]:word_embs[x]
 						  for x in tqdm(range(word_embs.shape[0]))}
-			phrase_freq = defaultdict(int)
+			phrase_freqs = []
 			for doc in docs:
+				phrase_freq = defaultdict(int)
 				for phrase in doc:
 					phrase_freq[phrase] += 1
-			new_emb = doc_reweight(phrase2emb, phrase_freq, None, 'B')
-
+				phrase_freqs.append(phrase_freq)
+			new_emb = doc_reweight(phrase2emb, phrase_freqs, None, 'B')
+			# results = summarizer.compare(config, None, None, None, new_emb, doc2emb, graph_builder.skip_doc)
 			doc2emb = model.doc_embeddings()
 			# print(model.doc_embeddings().shape)
 			# print(model.input_embeddings().shape)
@@ -370,17 +374,25 @@ if __name__ == '__main__':
 			graph_builder.load_label("{}_label.p".format(config['dataset']))
 			doc_assignment, top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
 
-			category = None
-			sim_max = -1
-			for label in label2emb:
-				if '_' not in label:
-					continue
-				sim = 1 - spatial.distance.cosine(new_emb, label2emb[label])
-				if sim > sim_max:
-					sim_max = sim
-					category = label
+			
+			
 
-			print('New docs assigned to ' + category)
+			count = defaultdict(int)
+			for doc_agg_emb in new_emb:
+				sim_max = -1
+				category = None
+				for label in label2emb:
+					if '_' not in label:
+						continue
+					sim = 1 - spatial.distance.cosine(doc_agg_emb, label2emb[label])
+					if sim > sim_max:
+						sim_max = sim
+						category = label
+				count[category]+= 1
+			print(count)
+			
+			picked_category = max(count.items(), key=operator.itemgetter(1))[0]
+			print('New docs assigned to ' + picked_category)
 
 			hierarchy = simple_hierarchy()
 			for h in hierarchy:
@@ -391,11 +403,11 @@ if __name__ == '__main__':
 			siblings_docs = [list(map(lambda x: x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings
 							 if l != category]
 			twin_docs = list(map(lambda x: x[0], top_label_assignment[category][:config['topk']]))
+			comparative_docs = summarizer.compare(config, None, None, None, new_emb, doc2emb, graph_builder.skip_doc, list(map(lambda x: x[0],top_label_assignment[picked_category])))
+			#embed()
 
-			embed()
-			exit()
 		
-		summarizer.summary(config, docs, siblings_docs, twin_docs, document_phrase_cnt, inverted_index)
+		summarizer.summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_phrase_cnt, inverted_index)
 			
 			#break
 

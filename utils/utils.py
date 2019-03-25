@@ -1033,8 +1033,8 @@ def construct_unified_hierarchy():
     h.save_hierarchy('KnowledgeEmbed_NYT_full_hierarchies.p')
     return h
 
-def doc_reweight(phrase_embedding, phrase_freq, dist_map, option):
-    # phrase_freq: {'phrase_1': x_1, 'phrase_2': x_2,...}
+def doc_reweight(phrase_embedding, phrase_freqs, dist_map, option):
+    # phrase_freqs: list of dict {'phrase_1': x_1, 'phrase_2': x_2,...}
     # x_i means the logarithm of frequency, log(freq(phrase_i) + 1).
     # Load dist_map from file.
     #option: How to do reweighting. 'A': direct average embedding. 'B': average embedding with weights.
@@ -1049,23 +1049,25 @@ def doc_reweight(phrase_embedding, phrase_freq, dist_map, option):
         vec_size = len(phrase_embedding[p])
         break
 
-    avg_emb = avg_emb_with_distinct(phrase_freq, phrase_embedding, dist_map, vec_size)
+    avg_emb = avg_emb_with_distinct(phrase_freqs, phrase_embedding, dist_map, vec_size)
 
     return avg_emb
 
-def avg_emb_with_distinct(phrase_freq, embs_from, dist_map, vec_size):
+def avg_emb_with_distinct(phrase_freqs, embs_from, dist_map, vec_size):
 
-    avg_emb = np.zeros(vec_size)
+    avg_emb = np.zeros((len(phrase_freqs), vec_size))
     t_weight = 0
 
-    for key, value in phrase_freq.items():
-        if key not in embs_from or key not in dist_map:
-            continue
-        t_emb = embs_from[key]
-        w = value * dist_map[key]
-        avg_emb += w * t_emb
-        t_weight += w
-    avg_emb /= t_weight
+    for idx,phrase_freq in enumerate(phrase_freqs):
+        for key, value in phrase_freq.items():
+            if key not in embs_from or key not in dist_map:
+                continue
+            t_emb = embs_from[key]
+            #print(key, dist_map[key])
+            w = value * dist_map[key]
+            avg_emb[idx] += w * t_emb
+            t_weight += w
+        avg_emb[idx] /= t_weight
 
     return avg_emb
 

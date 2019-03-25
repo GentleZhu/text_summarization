@@ -96,8 +96,8 @@ class phraseExtractor:
             self.avg_dl += self._get_sibling_phrase_cnt(self.target_docs)
             self.avg_dl /= (len(self.sibling_groups) + 1)
         elif option == 'raw':
-            self.avg_dl = self._get_target_phrase_cnt(self.target_docs)
-            self.avg_dl += self._get_sibling_phrase_cnt(self.target_docs)
+            self.avg_dl = sum([self._get_sibling_phrase_cnt(sibling_cell) for sibling_cell in self.sibling_groups])
+            self.avg_dl += self._get_target_phrase_cnt(self.target_docs)
             self.avg_dl /= (len(self.sibling_groups) + 1)
         else:
             raise Exception
@@ -217,8 +217,13 @@ class phraseExtractor:
         #               F. Integrity + distinc
         #               G. tf-idf
         #               H. Integrity + popularity
-        self.load_freq_data(document_phrase_cnt, inverted_index)
-        self._calculate_sibling_max_df()
+        if mode == 0:
+            self.load_freq_data(document_phrase_cnt, inverted_index, option = 'raw')
+            self._calculate_sibling_max_df(option = 'raw')
+        elif mode == 1:
+            self.load_freq_data(document_phrase_cnt, inverted_index, option = 'id')
+            self._calculate_sibling_max_df(option = 'id')
+        
         if score_option in ['D', 'E', 'F', 'H']:
             self.read_int('/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/AutoPhrase.txt')
         #print('Start calculating scores...')
