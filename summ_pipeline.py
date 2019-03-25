@@ -368,6 +368,14 @@ if __name__ == '__main__':
 				# for k in siblings:
 				label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy()
 
+			doc2emb_dict = {i: doc2emb[i] for i in range(doc2emb.shape[0])}
+			new_label2id = {}
+			for t in graph_builder.label2id:
+				if '_' in t:
+					new_label2id[t] = graph_builder.label2id[t]
+			embed()
+			exit()
+
 			document_phrase_cnt, inverted_index = collect_statistics(
 				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
 			graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))

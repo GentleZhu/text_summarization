@@ -1002,25 +1002,38 @@ def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):
     
     return(batch_data, label_data)
 
-def construct_unified_hierarchy():
+def unified_h():
     h = {'disaster': ['flood_', 'wildfire_', 'earthquake_', 'drought_', 'hurricane_', 'human_caused_'],
          'politics': ['election_', 'immigration_', 'gun_control_', 'gay_right_', 'law_', 'military_'],
          'business': ['stocks_and_bonds_', 'trade_', 'economy_'],
          'science': ['astronomy_', 'physics_', 'geology_', 'biology_', 'chemistry_'],
          'sports': ['football_', 'hockey_', 'soccer_', 'golf_', 'basketball_', 'baseball_', 'tennis_'],
-         'football_': ['football'], 'hockey_': ['hockey'], 'soccer_': ['soccer', 'fifa', 'world_cup'], 'golf_': ['golf', 'tiger_woods'],
+         'football_': ['football'], 'hockey_': ['hockey'], 'soccer_': ['soccer', 'fifa', 'world_cup'],
+         'golf_': ['golf', 'tiger_woods'],
          'basketball_': ['basketball'], 'baseball_': ['baseball'], 'tennis_': ['tennis'],
-         'astronomy_': ['astronomy', 'planet', 'comet'], 'physics_': ['physics', 'quantum_computing', 'physicist'], 'geology_': ['geology', 'earth_science', 'geologist'],
-         'biology_': ['biology', 'cancer', 'disease', 'species', 'frog'], 'chemistry_':['chemistry', 'molecule', 'compound'],
+         'astronomy_': ['astronomy', 'planet', 'comet'], 'physics_': ['physics', 'quantum_computing', 'physicist'],
+         'geology_': ['geology', 'earth_science', 'geologist'],
+         'biology_': ['biology', 'cancer', 'disease', 'species', 'frog'],
+         'chemistry_': ['chemistry', 'molecule', 'compound'],
          'flood_': ['flood', 'floodplain', 'flowing_water'],
-         'wildfire_': ['wildfire', 'firefighter', 'wildfires'], 'earthquake_': ['earthquake', 'volcano', 'seismologists'],
-         'drought_': ['drought', 'famine', 'starvation', 'climate'], 'hurricane_': ['hurricane', 'tornado', 'hurricane_katrina'],
-         'human_caused_': ['shooting', 'bomber', 'massacre'], 'election_': ['election', 'presidential_election', 'special_election', 'polling_places'],
-         'immigration_': ['immigration', 'illegal_immigration', 'illegal_immigrants'], 'gun_control_': ['gun_control', 'assault_weapons_ban', 'handguns'],
-         'gay_right_': ['gay_rights', 'gay', 'gay_marriage'], 'law_': ['law_enforcement', 'legislation', 'supreme_court'],
+         'wildfire_': ['wildfire', 'firefighter', 'wildfires'],
+         'earthquake_': ['earthquake', 'volcano', 'seismologists'],
+         'drought_': ['drought', 'famine', 'starvation', 'climate'],
+         'hurricane_': ['hurricane', 'tornado', 'hurricane_katrina'],
+         'human_caused_': ['shooting', 'bomber', 'massacre'],
+         'election_': ['election', 'presidential_election', 'special_election', 'polling_places'],
+         'immigration_': ['immigration', 'illegal_immigration', 'illegal_immigrants'],
+         'gun_control_': ['gun_control', 'assault_weapons_ban', 'handguns'],
+         'gay_right_': ['gay_rights', 'gay', 'gay_marriage'],
+         'law_': ['law_enforcement', 'legislation', 'supreme_court'],
          'military_': ['military'],
-         'stocks_and_bonds_': ['stock', 'bond', 'stock_market'], 'trade_': ['trade', 'world_trade_organization', 'free_agent'],
+         'stocks_and_bonds_': ['stock', 'bond', 'stock_market'],
+         'trade_': ['trade', 'world_trade_organization', 'free_agent'],
          'economy_': ['economy']}
+    return h
+
+def construct_unified_hierarchy():
+    h = unified_h()
     d = []
     for k in h:
         for dd in h[k]:
@@ -1032,6 +1045,172 @@ def construct_unified_hierarchy():
     h = Hierarchy(d, None, None, 'E')
     h.save_hierarchy('KnowledgeEmbed_NYT_full_hierarchies.p')
     return h
+
+def calculate_distinct_map(label2id, doc2emb, phrase2emb, label2emb, dp_file):
+    pd_map = load_dp(dp_file, reverse=True)
+    h = unified_h()
+    normal = False
+    for i in range(2):
+
+        if i > 0:
+            normal = True
+
+        print('============= iter ' + str(i + 1) + ' of dist started.')
+
+        pred_label, doc_score = doc_assignment(doc2emb, label2emb)
+        top_labels = label2id.keys()
+
+        uniform_vec = [1.0 / len(top_labels)] * len(top_labels)
+        # print uniform_vec
+        label_to_doc = {}
+
+        for label in top_labels:
+            label_to_doc[label] = set()
+
+        docs_used = {}
+
+        if normal:
+            print('used docs in reweighting: ' + str(len(pred_label)))
+            for doc, score in doc_score.items():
+                label_to_doc[pred_label[doc]].add(doc)
+        else:
+            for label in tqdm(top_labels):
+                for t_phrase in h[label]:
+                    if t_phrase not in pd_map:
+                        print(t_phrase + ' not in pd_map!')
+                        continue
+                    for doc in pd_map[t_phrase]:
+                        label_to_doc[label].add(doc)
+                        if doc not in docs_used:
+                            docs_used[doc] = set()
+                        docs_used[doc].add(label)
+            print('docs used: %d' % len(docs_used))
+
+        cnt_vec = [0.0] * len(top_labels)
+        for label in label_to_doc:
+            cnt_vec[label2id[label]] = len(label_to_doc[label])
+        comp_vec = l1_normalize(cnt_vec)
+
+        print(cnt_vec)
+
+        distinct_map = {}
+
+        if normal:
+            for phrase in phrase2emb:
+                p_vec = [0.0] * len(top_labels)
+
+                # if len(pd_map[phrase]) < 100:
+                # 	continue
+
+                for doc in pd_map[phrase]:
+                    idx = label2id[pred_label[doc]]
+                    p_vec[idx] += 1.0
+
+                if sum(p_vec) == 0:
+                    print('ERROR!!!!!!!!!!')
+                    continue
+
+                p_vec = l1_normalize(p_vec)
+
+                # kl = 0.1 + 0.9 * utils.kl_divergence(p_vec, uniform_vec)
+                kl = kl_divergence(p_vec, uniform_vec)
+                # kl = utils.kl_divergence(p_vec, comp_vec)
+                distinct_map[phrase] = kl
+        else:
+            for phrase in phrase2emb:
+                p_vec = [0.0] * len(top_labels)
+
+                # if len(pd_map[phrase]) < 100:
+                # 	continue
+                if not phrase in pd_map:
+                    print(phrase + ' not in pd_map!')
+                    continue
+
+                for doc in pd_map[phrase]:
+                    if doc in docs_used:
+                        for label in docs_used[doc]:
+                            idx = label2id[label]
+                            p_vec[idx] += 1.0
+
+                # print p_vec
+
+                if sum(p_vec) == 0:
+                    distinct_map[phrase] = 0
+                    # print 'ERROR!!!!!!!!!!'
+                    continue
+
+                # p_vec = [x / cnt_vec[i] for i, x in enumerate(p_vec)]
+
+
+                p_vec = l1_normalize(p_vec)
+
+                # kl = 0.1 + 0.9 * utils.kl_divergence(p_vec, uniform_vec)
+                # kl = utils.kl_divergence(p_vec, uniform_vec)
+                kl = kl_divergence(p_vec, comp_vec)
+                distinct_map[phrase] = kl
+
+        dist_map = distinct_map
+    return dist_map
+
+def doc_assignment(doc2emb, label2emb):
+	pred_label = {}
+	doc_score = {}
+
+	for doc in doc2emb:
+		doc_emb = doc2emb[doc]
+		sim_map = classify_doc(doc_emb, label2emb)
+		pred_label[doc] = sim_map[0][0]
+		doc_score[doc] = sim_map[0][1]
+
+	return pred_label, doc_score
+
+def classify_doc(t_emb, target_embs):
+    sim_map = {}
+    for key in target_embs:
+        sim_map[key] = cossim(t_emb, target_embs[key])
+    sim_map = sorted(sim_map.items(), key=operator.itemgetter(1), reverse=True)
+    return sim_map
+
+def cossim(p, q):
+    if len(p) != len(q):
+        print('KL divergence error: p, q have different length')
+
+    p_len = q_len = mix_len = 0
+
+    for i in range(len(p)):
+        mix_len += p[i] * q[i]
+        p_len += p[i] * p[i]
+        q_len += q[i] * q[i]
+
+    return mix_len / (math.sqrt(p_len) * math.sqrt(q_len))
+
+def load_dp(dp_file, reverse=True):
+
+	result_map = {}
+	with open(dp_file, 'r') as f:
+		for line in f:
+			segs = line.strip('\r\n').split('\t')
+			if reverse:
+				if segs[1] not in result_map:
+					result_map[segs[1]] = set()
+				result_map[segs[1]].add(segs[0])
+
+	return result_map
+
+def l1_normalize(p):
+    sum_p = sum(p)
+    if sum_p <= 0:
+        print('Normalizing invalid distribution')
+    return [float(x)/sum_p for x in p]
+
+def kl_divergence(p, q):
+	if len(p) != len(q):
+		print('KL divergence error: p, q have different length')
+	c_entropy = 0
+	for i in range(len(p)):
+		if p[i] > 0:
+			c_entropy += p[i] * math.log(float(p[i]) / q[i])
+	return c_entropy
 
 def doc_reweight(phrase_embedding, phrase_freqs, dist_map, option):
     # phrase_freqs: list of dict {'phrase_1': x_1, 'phrase_2': x_2,...}
