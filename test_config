@@ -1,6 +1,6 @@
 [DEFAULT]
 batch_size = 128
-epoch_number = 20
+epoch_number = 10
 emb_size = 100
 kb_emb_size = 100
 num_sample = 5
@@ -10,10 +10,10 @@ dataset = NYT_full_lead-3
 method = KnowledgeEmbed
 id = mar19-hie-hinge-lr_0.001
 preprocess = True
-input_file = results/2018_ca_wildfire.txt
+input_file = results/Zika_Virus.txt
 stage = test
-summ_method = caseOLAP-twin
+summ_method = bams
 topk = 100
-expan = 1
+expan = 2
 comparative_opt = weighted_avg
 vec_option = weighted

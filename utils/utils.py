@@ -112,8 +112,9 @@ class textGraph(object):
     
     
     def normalize(self, text):
-        text = ''.join(c for c in text.lower() if c not in '0123456789')
-        return [word.strip(string.punctuation) for word in text.split() if word not in (self.stopwords)]
+        #text = ''.join(c for c in text.lower() if c not in '0123456789')
+        texts = ' '.join([word.strip(string.punctuation) for word in text.lower().split() if word not in (self.stopwords)])
+        return texts.split()
         #return(texts)
 
     #add mapping here
@@ -1032,7 +1033,7 @@ def unified_h():
          'economy_': ['economy']}
     return h
 
-def construct_unified_hierarchy():
+def construct_unified_hierarchy(file_path):
     h = unified_h()
     d = []
     for k in h:
@@ -1043,8 +1044,7 @@ def construct_unified_hierarchy():
                 d.append([dd, k, 1])
 
     h = Hierarchy(d, None, None, 'E')
-    h.save_hierarchy('KnowledgeEmbed_NYT_full_hierarchies.p')
-    return h
+    h.save_hierarchy(file_path)
 
 def calculate_distinct_map(labels, doc2emb, phrase2emb, label2emb, dp_file):
     pd_map = load_dp(dp_file, reverse=True)

@@ -85,6 +85,7 @@ if __name__ == '__main__':
 	if config['stage'] == 'train':
 		if config['preprocess']:
 			#embed()
+			construct_unified_hierarchy("{}_{}_hierarchies.p".format(config['method'], config['dataset']))
 			graph_builder = textGraph(None)
 			graph_builder.load_stopwords('/shared/data/qiz3/text_summ/data/stopwords.txt')
 			print("Loading Hierarchies")
@@ -92,7 +93,7 @@ if __name__ == '__main__':
 			json_path = '/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/{}.json'.format(config['dataset'])
 			#config['dataset']
 			if config['expan'] == 0:
-				h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], 'NYT_full'), 'rb'))
+				h = pickle.load(open("{}_{}_hierarchies.p".format(config['method'], config['dataset']), 'rb'))
 				#sports = pickle.load(open("hierarchy_sports.p", 'rb'))
 				#h_ = pickle.load(open('topic_hierarchy.p', 'rb'))
 
@@ -134,7 +135,7 @@ if __name__ == '__main__':
 			save_point = {'X': X, 'num_labels':num_labels, 'num_docs':num_docs, 'num_words':num_words}
 			
 			graph_builder.dump_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
-			graph_builder.dump_label("{}_label.p".format(config['dataset']))
+			graph_builder.dump_label("{}_expan-{}_label.p".format(config['dataset'], config['expan']))
 			pickle.dump(save_point, open("{}_{}_expan-{}.p".format(config['method'], config['dataset'], config['expan']), 'wb'))
 			if config['expan'] == 0:
 				for concept in concepts:
@@ -192,7 +193,8 @@ if __name__ == '__main__':
 					tmp = json.loads(line)
 					docs_info.append({'title': tmp['title'], 'type': tmp['type']})
 			#top_label_assignment = pickle.load(open('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/src/sib.dump' ,'rb'))
-		document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+				document_phrase_cnt, inverted_index = collect_statistics(
+					'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
 
 		'''
 		for k in top_label_assignment:
@@ -201,9 +203,6 @@ if __name__ == '__main__':
 					docs_info[doc[0]]['score'] = str(doc[1])
 					OUT.write(json.dumps(docs_info[doc[0]]) + '\n')
 		'''
-
-		embed()
-		exit()
 
 		hierarchy = simple_hierarchy()
 		for idx,h in enumerate(hierarchy.keys()):
@@ -221,7 +220,7 @@ if __name__ == '__main__':
 
 				phrase2idx, idx2phrase = build_background_dict(docs, document_phrase_cnt)
 				#TODO(@jingjing): _generate_caseOLAP_scores can not work currently, because it conflict with generate_caseOLAP_scores in test mode, see PhraseExtractor's todo.
-				scores, ranked_list = _generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx, option = 'D')
+				scores, ranked_list = _generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index, phrase2idx, option = 'A')
 				print('concept:{}, category:{}, key phrases:{}'.format(h, twin, ranked_list[:30]))
 				if config['expan'] >= 0:
 					expan_terms = expand(label2emb[twin], model, graph_builder.name2id, ranked_list[:10])
@@ -285,9 +284,10 @@ if __name__ == '__main__':
 
 		#TODO(@jingjing): add weighted average embedding for comparative search(route 2 in the slides)
 		if config['comparative_opt'] == 'knn': #KNN comparative search, route 0 and route 1
-			document_phrase_cnt, inverted_index = collect_statistics('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
-			graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
-			graph_builder.load_label("{}_label.p".format(config['dataset']))
+			document_phrase_cnt, inverted_index = collect_statistics(
+				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
+			#graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
+			#graph_builder.load_label("{}_label.p".format(config['dataset']))
 
 			if True:
 				model = load_model(config)
@@ -320,7 +320,7 @@ if __name__ == '__main__':
 
 			elif config['vec_option'] == 'tfidf':
 				feature_vectors, vectorizer = tf_idf_vectorizer(
-					'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
+					'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
 				# comparative documents
 				results = summarizer.compare(config, input_docs, feature_vectors, vectorizer, None, None,
 											 graph_builder.skip_doc)
@@ -358,13 +358,7 @@ if __name__ == '__main__':
 					phrase_freq[phrase] += 1
 				phrase_freqs.append(phrase_freq)
 
-			dist_map = pickle.load(open('dist_map.p', 'rb'))
-
-			new_emb = doc_reweight(phrase2emb, phrase_freqs, dist_map, 'B')
-			# results = summarizer.compare(config, None, None, None, new_emb, doc2emb, graph_builder.skip_doc)
 			doc2emb = model.doc_embeddings()
-			# print(model.doc_embeddings().shape)
-			# print(model.input_embeddings().shape)
 			label2emb = dict()
 
 			for k in graph_builder.label2id:
@@ -372,13 +366,36 @@ if __name__ == '__main__':
 				label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy()
 
 			document_phrase_cnt, inverted_index = collect_statistics(
-				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/full.txt')
-			graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
-			graph_builder.load_label("{}_label.p".format(config['dataset']))
+				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
+			#graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
+			#graph_builder.load_label("{}_label.p".format(config['dataset']))
 			doc_assignment, top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
 
 			
-			
+			if False:
+				#############################################
+				# Used for calculating dist map and doc_emb #
+				#############################################
+				new_labels = []
+				for label in label2emb:
+					if '_' in label:
+						new_labels.append(label)
+				new_doc2emb = {str(i): doc2emb[i] for i in range(doc2emb.shape[0])}
+				dp_file = '/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/dp.txt'
+				dist_map = calculate_distinct_map(new_labels, new_doc2emb, phrase2emb, label2emb, dp_file)
+				pickle.dump(dist_map,
+							open('dist_map_{}_{}_expan-{}.p'.format(config['method'], config['dataset'], config['expan']),
+								 'wb'))
+				bg_doc2emb = {}
+				for d in tqdm(range(doc2emb.shape[0])):
+					bg_doc2emb[d] = doc_reweight(phrase2emb, [document_phrase_cnt[d]], dist_map, 'B')
+				pickle.dump(dist_map, open('{}_expan-{}_dist_map.p'.format(config['dataset'], config['expan']), 'wb'))
+				pickle.dump(bg_doc2emb, open('{}_expan-{}_bg_doc2emb.p'.format(config['dataset'], config['expan']), 'wb'))
+			else:
+				dist_map = pickle.load(open('dist_map.p', 'rb'))
+				new_doc_emb = pickle.load(open('bg_doc2emb.p', 'rb'))
+
+			new_emb = doc_reweight(phrase2emb, phrase_freqs, dist_map, 'B')
 
 			count = defaultdict(int)
 			for doc_agg_emb in new_emb:
@@ -406,11 +423,22 @@ if __name__ == '__main__':
 			siblings_docs = [list(map(lambda x: x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings
 							 if l != category]
 			twin_docs = list(map(lambda x: x[0], top_label_assignment[category][:config['topk']]))
-			comparative_docs = summarizer.compare(config, None, None, None, new_emb, doc2emb, graph_builder.skip_doc, list(map(lambda x: x[0],top_label_assignment[picked_category])))
+
+			comparative_docs = summarizer.compare(config, None, None, None, new_emb, new_doc_emb, graph_builder.skip_doc, list(map(lambda x: x[0],top_label_assignment[picked_category])))
+			
+			if True:
+				docs_info = []
+				with open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json') as meta_json:
+					for idx,line in tqdm(enumerate(meta_json)):
+						tmp = json.loads(line)
+						docs_info.append({'title': tmp['title'], 'type': tmp['type']})
+
 			#embed()
+			for d in comparative_docs:
+				print(docs_info[d])
 
 		
-		summarizer.summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_phrase_cnt, inverted_index)
+		summarizer.summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_phrase_cnt, inverted_index, graph_builder=graph_builder)
 			
 			#break
 

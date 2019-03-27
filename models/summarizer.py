@@ -75,7 +75,7 @@ def GCNRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels,
     return top_list
 
 def seedRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels):
-    # Textrank.
+    # Manifold Ranking.
     threshold = 0.0001
     alpha = 0.85
 
@@ -96,11 +96,10 @@ def seedRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels
     for t in target_phrases:
         if t in labels:
             weight[phrase2idx[t]] = 1
-    scores = 1.0 / num_target * np.ones([num_target])
-    #topic_scores = scores.copy()
-    current_scores = scores.copy()
-    #if len(sink) > 0:
-    #    print(sum(sum(I)), num_target)
+
+    scores = np.dot(np.linalg.inv(np.eye(num_target) - alpha * normalized_sim), weight)
+
+    '''
     while True:
         #print('Update...')
         scores = alpha * np.dot(normalized_sim, scores) + (1 - alpha) * weight
@@ -108,6 +107,7 @@ def seedRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels
         if dist < threshold:
             break
         current_scores = scores
+    '''
     ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
     ranked_list = sorted(ranked_list, key=lambda t:-t[1])
     return ranked_list
@@ -195,7 +195,7 @@ def textrank(target_phrases, similarity_scores):
 
     return scores
 
-def build_co_occurrence_matrix(target, phrase2idx, seg_file, opt = 0):
+def build_co_occurrence_matrix(target, phrase2idx, seg_file, opt = 0, graph_builder = None):
     segIn = open(seg_file)
     similarity_scores = np.zeros([len(phrase2idx), len(phrase2idx)])
     doc_id = -1
@@ -209,12 +209,16 @@ def build_co_occurrence_matrix(target, phrase2idx, seg_file, opt = 0):
         #print(phrases)
         #result = {}
         
-        #for p in set(phrases):
-        #    line = line.replace("<phrase>"+p+"</phrase>", p.replace(' ', '_'))
+       
 
         #text = ''.join(c for c in line.lower() if c not in '0123456789')
-        #tmp_passage = [word.strip(string.punctuation) for word in text.split()]
-        tmp_passage = phrases
+        #tmp_passage = [word.strip(string.punctuation) for word in text.lower().split()]
+        if graph_builder is None:
+            tmp_passage = phrases
+        else:
+            for p in set(phrases):
+                line = line.replace("<phrase>"+p+"</phrase>", p.replace(' ', '_'))
+            tmp_passage = graph_builder.normalize(line)
         '''
         tmp_similarity_scores = np.zeros([len(phrase2idx), len(phrase2idx)])
         single_occ_threshold = 3
@@ -784,7 +788,7 @@ def search_nearest_doc_emb(doc2emb, new_emb, skip_doc=None, contain_doc=None):
     num_docs = new_emb.shape[0]
 
     similarity = defaultdict(float)
-    for i in range(doc2emb.shape[0]):
+    for i in doc2emb:
         if skip_doc and i in skip_doc:
             continue
         if contain_doc is None or i in contain_doc:
@@ -825,7 +829,7 @@ def compare(config, docs, feature_vectors, vectorizer, new_emb, doc2emb, skip_do
     else:
         return search_nearest_doc_emb(doc2emb, new_emb, skip_doc, contain_doc)
 
-def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_phrase_cnt, inverted_index):
+def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_phrase_cnt, inverted_index, graph_builder=None):
     
 
     #TODO: @jingjing, rewrite target_doc_assign in utils, you can have label2emb.keys instead call concepts
@@ -879,6 +883,29 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
         #phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
 
     elif config['summ_method'] == 'bams':
+        phrase2idx, idx2phrase = build_in_domain_dict(docs)
+        scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt,
+                                                       inverted_index, phrase2idx, option='A')
+
+        
+
+        '''
+        phrase2idx, idx2phrase = build_in_domain_dict(docs)
+        scores_, ranked_list_ = generate_caseOLAP_scores([twin_docs], docs, document_phrase_cnt, inverted_index,
+                                                       phrase2idx, option='B')
+        phrase_scores = {t[0]: t[1] for t in ranked_list_}
+        background_scores = {t[0]: t[1] for t in ranked_list}
+        for phrase in phrase2idx:
+            phrase_scores[phrase] *= background_scores[phrase]
+        ranked_list = [(k, phrase_scores[k]) for k in phrase_scores]
+        ranked_list = sorted(ranked_list, key=lambda t: -t[1])
+        '''
+
+        labels = set()
+
+        for r in ranked_list[:10]:
+            if len(r[0].strip()) > 0:
+                labels.add(r[0].strip())
         target_phrase2idx, target_idx2phrase = build_in_domain_dict(docs)
         phrase2idx, idx2phrase = build_background_dict(comparative_docs, document_phrase_cnt)
 
@@ -886,30 +913,39 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
         phrase2idx, idx2phrase = build_in_domain_dict(docs, phrase2idx)
         
         similarity_scores = build_co_occurrence_matrix(comparative_docs, phrase2idx, 
-                    '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt', opt=1)
+                    '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt', opt=1, graph_builder=graph_builder)
         #embed()
         #create_graph_from_matrix(similarity_scores, idx2phrase)
-        scores = seedRanker(phrase2idx.keys(), similarity_scores)
+        scores = seedRanker(phrase2idx.keys(), similarity_scores, phrase2idx, idx2phrase, labels)
 
         bgs = {}
-        for i,score in enumerate(scores):
-            bgs[idx2phrase[i]] = score
-
+        for score in scores:
+            bgs[score[0]] = score[1]
 
         similarity_scores = build_target_co_occurrence_matrix(docs, phrase2idx, opt=1)
         #create_graph_from_matrix(similarity_scores, idx2phrase)
-        scores = seedRanker(phrase2idx.keys(), similarity_scores, phrase2idx, idx2phrase)
+        scores = seedRanker(phrase2idx.keys(), similarity_scores, phrase2idx, idx2phrase, labels)
 
         tgt = {}
-        for i,score in enumerate(scores):
-            tgt[idx2phrase[i]] = score
+        for score in scores:
+            tgt[score[0]] = score[1]
 
         final = []
         for phrase in target_phrase2idx:
-            final.append([phrase, tgt[phrase] / bgs[phrase]])
+            final.append([phrase, tgt[phrase] - bgs[phrase] ])
+            #final.append(tgt[phrase] - bgs[phrase])
+        final.sort(key=lambda x:-x[1])
+        '''
+        final_phrase2idx, final_idx2phrase = {}, {}
+        for i in final[:100]:
+            final_phrase2idx[i[0]] = len(final_phrase2idx)
+            final_idx2phrase[len(final_idx2phrase)] = i[0]
+        final = [x[1] for x in final[:500]]
         
-
-
+        similarity_scores, _ = calculate_pairwise_similarity(final_phrase2idx)
+        selected_index = select_phrases(final, similarity_scores, 5, 15)
+        phrases = [final_idx2phrase[k] for k in selected_index]
+        '''
         embed()
 
 
