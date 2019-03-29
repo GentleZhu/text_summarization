@@ -40,10 +40,7 @@ def load_model(config):
     model = KnowledgeEmbed(num_words=num_words, num_docs=num_docs, num_labels=num_labels, embed_size=config['emb_size'])
     #model = KnowledgeEmbed(num_words=num_words, num_docs=num_docs, embed_size=config['emb_size'],
     #            kb_emb_size=config['kb_emb_size'], relational_bias=config['relation_list'])
-    if 'id' not in config:
-        model_path = "{}{}_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['epoch_number'])
-    else:
-        model_path = "{}{}_{}_id_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['id'], config['epoch_number'])
+    model_path = "{}{}_{}_id_{}_expan-{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['id'], config['expan'], config['epoch_number'])
     tmp = torch.load(model_path, map_location=lambda storage, loc: storage)
     model.load_state_dict(tmp, False)
     model.cuda()
@@ -160,7 +157,7 @@ if __name__ == '__main__':
 		graph_builder = textGraph()
 		#load previous step dictionary mapping
 		graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
-		graph_builder.load_label("{}_label.p".format(config['dataset']))
+		graph_builder.load_label("{}_expan-{}_label.p".format(config['dataset'], config['expan']))
 		
 		graph_builder.load_linked_ids("{}_expan-{}_linked_ids.p".format(config['dataset'], config['expan']))
 		concepts = pickle.load(open("{}_{}_expan-{}_concepts.p".format(config['method'], config['dataset'], config['expan']), 'rb'))
@@ -184,6 +181,21 @@ if __name__ == '__main__':
 			label2emb = load_label_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/l_expan.vec')
 			phrase2emb = load_phrase_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/p.vec')
 
+		if False:
+			document_phrase_cnt, inverted_index = collect_statistics(
+				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
+			model = load_model(config)
+			word_embs = model.input_embeddings()
+			phrase2emb = {graph_builder.id2name[x]: word_embs[x]
+						  for x in tqdm(range(word_embs.shape[0]))}
+			dist_map = pickle.load(open('{}_expan-{}_dist_map.p'.format(config['dataset'], config['expan']), 'rb'))
+			doc2emb = np.zeros([167842, 100])
+			for d in tqdm(range(doc2emb.shape[0])):
+				doc2emb[d] = doc_reweight(phrase2emb, [document_phrase_cnt[d]], dist_map, 'B')
+
+		#embed()
+		#exit()
+
 		doc_assignment,top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
 		# for checking top-k relevant documents
 		if False:
@@ -193,8 +205,11 @@ if __name__ == '__main__':
 					tmp = json.loads(line)
 					docs_info.append({'title': tmp['title'], 'type': tmp['type']})
 			#top_label_assignment = pickle.load(open('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/src/sib.dump' ,'rb'))
-				document_phrase_cnt, inverted_index = collect_statistics(
-					'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
+		document_phrase_cnt, inverted_index = collect_statistics(
+			'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
+
+		for l in top_label_assignment:
+			print(l, len(top_label_assignment[l]))
 
 		'''
 		for k in top_label_assignment:
@@ -231,7 +246,7 @@ if __name__ == '__main__':
 							seed_cnt += 1
 					expanded_seeds = []
 					for seed in expan_terms:
-						if seed_cnt >= 6:
+						if seed_cnt >= 8:
 							break
 						if seed[0] not in concepts[idx].clean_links:
 							concepts[idx].clean_links[seed[0]] = twin
@@ -239,6 +254,7 @@ if __name__ == '__main__':
 							expanded_seeds.append(seed[0])
 					print('concept:{}, category:{}, expanded seeds:{}'.format(h, twin, expanded_seeds))
 					#print(concepts[idx].clean_links)
+			embed()
 				
 
 		if True:
@@ -263,7 +279,7 @@ if __name__ == '__main__':
 		graph_builder.load_linked_ids("{}_expan-{}_linked_ids.p".format(config['dataset'], config['expan']))
 		graph_builder.load_stopwords('/shared/data/qiz3/text_summ/data/stopwords.txt')
 		graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
-		graph_builder.load_label("{}_label.p".format(config['dataset']))
+		graph_builder.load_label("{}_expan-{}_label.p".format(config['dataset'], config['expan']))
 		with open(config['input_file']) as IN:
 			input_docs = []
 			docs = []
@@ -366,9 +382,10 @@ if __name__ == '__main__':
 				label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy()
 
 			document_phrase_cnt, inverted_index = collect_statistics(
-				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
+				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset'].replace('_lead-3', '')))
 			#graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
 			#graph_builder.load_label("{}_label.p".format(config['dataset']))
+
 			doc_assignment, top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
 
 			
@@ -392,10 +409,21 @@ if __name__ == '__main__':
 				pickle.dump(dist_map, open('{}_expan-{}_dist_map.p'.format(config['dataset'], config['expan']), 'wb'))
 				pickle.dump(bg_doc2emb, open('{}_expan-{}_bg_doc2emb.p'.format(config['dataset'], config['expan']), 'wb'))
 			else:
-				dist_map = pickle.load(open('dist_map.p', 'rb'))
-				new_doc_emb = pickle.load(open('bg_doc2emb.p', 'rb'))
+				dist_map = pickle.load(open('{}_expan-{}_dist_map.p'.format(config['dataset'], config['expan']), 'rb'))
+				new_doc_emb = pickle.load(open('{}_expan-{}_bg_doc2emb.p'.format(config['dataset'], config['expan']), 'rb'))
 
 			new_emb = doc_reweight(phrase2emb, phrase_freqs, dist_map, 'B')
+			
+			if False:
+				new_doc_emb = {}
+				related_docs = []
+				with open('../data/NYT_annotated_corpus/wp_1617.txt', 'r') as IN:
+					for idx,line in enumerate(IN):
+						phrase_freq = defaultdict(int)
+						for phrase in line:
+							phrase_freq[phrase] += 1
+						related_docs.append(line.strip())
+						new_doc_emb[idx] = doc_reweight(phrase2emb, [phrase_freq], dist_map, 'B')
 
 			count = defaultdict(int)
 			for doc_agg_emb in new_emb:
@@ -413,18 +441,21 @@ if __name__ == '__main__':
 			
 			picked_category = max(count.items(), key=operator.itemgetter(1))[0]
 			print('New docs assigned to ' + picked_category)
+			picked_category = 'election_'
 
 			hierarchy = simple_hierarchy()
 			for h in hierarchy:
 				if category in hierarchy[h]:
 					all_siblings = hierarchy[h]
 					break
+			#hierarchy['root'] = ['disaster', 'science', 'politics', 'business', 'sports']
 
 			siblings_docs = [list(map(lambda x: x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings
 							 if l != category]
 			twin_docs = list(map(lambda x: x[0], top_label_assignment[category][:config['topk']]))
 
 			comparative_docs = summarizer.compare(config, None, None, None, new_emb, new_doc_emb, graph_builder.skip_doc, list(map(lambda x: x[0],top_label_assignment[picked_category])))
+			#comparative_docs = summarizer.compare(config, None, None, None, new_emb, new_doc_emb)
 			
 			if True:
 				docs_info = []
@@ -434,8 +465,13 @@ if __name__ == '__main__':
 						docs_info.append({'title': tmp['title'], 'type': tmp['type']})
 
 			#embed()
-			for d in comparative_docs:
-				print(docs_info[d])
+				with open('tmp.txt', 'w') as OUT:
+					for d in comparative_docs:
+						OUT.write(docs_info[d]['title'] + '\n')
+			else:
+				with open('tmp.txt', 'w') as OUT:
+					for d in comparative_docs:
+						OUT.write(related_docs[d] + '\n')
 
 		
 		summarizer.summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_phrase_cnt, inverted_index, graph_builder=graph_builder)

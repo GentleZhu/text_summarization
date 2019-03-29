@@ -124,7 +124,7 @@ def load_target_docs(file_path, target_docs):
     IN_PHRASE_FLAG = False
     for cline in tqdm(segIn):
         doc_id += 1
-        if doc_id not in target_docs:
+        if target_docs is not None and doc_id not in target_docs:
             continue
         cline = cline.replace('<phrase>', ' <phrase> ').replace('</phrase>', ' </phrase> ').replace('\n', '')
         words = cline.split(' ')
@@ -144,12 +144,17 @@ def load_target_docs(file_path, target_docs):
     return passage
 
 if __name__ == '__main__':
-    file_path = '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt'
-    target_docs = [5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945]
+    file_path = '/shared/data/qiz3/text_summ/text_summarization/results/2018_ca_wildfire.txt'
+    #target_docs = [5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945]
+    target_docs = None
     window = 5
     passage = load_target_docs(file_path, target_docs)
     graph = from_terms_to_graph(passage, window)
     cores_dec(graph)
     core_n, names = best_level_density(graph)
+    ranked_list = []
+    for (n, name) in zip(core_n, names):
+        ranked_list.append((name, n))
+    ranked_list = sorted(ranked_list, key=lambda t: -t[1])
     embed()
     exit()

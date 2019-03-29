@@ -1,15 +1,15 @@
 [DEFAULT]
 batch_size = 128
-epoch_number = 30
+epoch_number = 10
 emb_size = 100
 kb_emb_size = 100
 num_sample = 5
-gpu = 0
-expan = 0
+gpu = 1
+expan = 2
 model_dir = /shared/data/qiz3/text_summ/src/model/
 dataset = washington
 method = KnowledgeEmbed
-id = mar27-hie-hinge-lr_0.001
+id = mar28-hie-hinge-lr_0.001
 preprocess = True
 doc_emb_path = intermediate_data/pretrain_doc.emb
 label_emb_path = intermediate_data/pretrain_label.emb

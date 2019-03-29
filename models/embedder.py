@@ -124,8 +124,8 @@ def Train(config, X, params):
 				loss.backward()
 				optimizer.step()
 
-			if epoch % 1 == 0:
-				model_path = "{}{}_{}_id_{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['id'], epoch)
+			if epoch % 2 == 0:
+				model_path = "{}{}_{}_id_{}_expan-{}_epoch_{}.pt".format(config['model_dir'],  config['method'], config['dataset'], config['id'], config['expan'], epoch)
 				t.save(model.state_dict(), model_path)
 			print("Epoch:{}, Loss:{}".format(epoch, epoch_loss))
 			#break

@@ -113,7 +113,7 @@ class textGraph(object):
     
     def normalize(self, text):
         #text = ''.join(c for c in text.lower() if c not in '0123456789')
-        texts = ' '.join([word.strip(string.punctuation) for word in text.lower().split() if word not in (self.stopwords)])
+        texts = ' '.join([word.strip(string.punctuation).replace("\'s", "") for word in text.lower().split() if word not in (self.stopwords) ])
         return texts.split()
         #return(texts)
 
@@ -254,8 +254,6 @@ class textGraph(object):
             #if idx == 167841:
             #    print("Linked tuples of NYT Annotated Corpus is :{}".format(len(self.tuples)))
         print("Linked corpus is: {}, tuples of NYT Annotated Corpus is :{}".format(num_linked_docs, len(self.tuples)))
-        
-        print("entity-linking done")
 
         self.label_constraints = []
         for concept in concepts:
@@ -860,7 +858,7 @@ def retrieve_siblings(main_doc_assignment, doc_assignment, labels, topk = 10):
         return_docs[label] = ranked_list
     return return_docs
 
-def target_hier_doc_assign(hierarchy, docs, label_embeddings, doc_embeddings, option='hard'):
+def target_hier_doc_assign_top_down(hierarchy, doc_embs, label2emb, option='hard'):
     threshold = 2
     current_node = 'root'
     while True:
@@ -873,21 +871,21 @@ def target_hier_doc_assign(hierarchy, docs, label_embeddings, doc_embeddings, op
             freq = [0 for _ in children]
         else:
             freq = [1.0 for _ in children]
-        for doc in docs:
-            v_doc = doc_embeddings[doc]
+        for doc in doc_embs:
+            v_doc = doc_embs[doc]
             if option == 'hard':
                 l = []
                 for idx, child in enumerate(children):
-                    v_label = label_embeddings[child]
-                    #l.append((idx, max(0, np.dot(v_doc, v_label))))
+                    v_label = label2emb[child]
+                    # l.append((idx, max(0, np.dot(v_doc, v_label))))
                     l.append((idx, max(0, 1 - spatial.distance.cosine(v_doc, v_label))))
                 (id, sim) = max(l, key=lambda t: t[1])
                 freq[id] += 1
             else:
                 for idx, child in enumerate(children):
-                    v_label = label_embeddings[child]
+                    v_label = label2emb[child]
                     sim = max(0, 1 - spatial.distance.cosine(v_doc, v_label))
-                    #sim = max(0, np.dot(v_doc, v_label))
+                    # sim = max(0, np.dot(v_doc, v_label))
                     freq[idx] *= sim
         freq = [t / sum(freq) for t in freq]
         if num_c == 1:
@@ -899,8 +897,104 @@ def target_hier_doc_assign(hierarchy, docs, label_embeddings, doc_embeddings, op
         if entropy > threshold:
             break
         current_node = children[np.argmax(freq)]
-        #break
+        # break
     return current_node, children
+
+def target_hier_doc_assign_top_down(hierarchy, doc_embs, label2emb, option='hard'):
+    threshold = 2
+    current_node = 'root'
+    while True:
+        print(current_node)
+        assert current_node in hierarchy
+        children = hierarchy[current_node]
+        num_c = len(children)
+        if option == 'hard':
+            freq = [0 for _ in children]
+        else:
+            freq = [1.0 for _ in children]
+        for doc in range(doc_embs.shape[0]):
+            v_doc = doc_embs[doc]
+            if option == 'hard':
+                l = []
+                for idx, child in enumerate(children):
+                    v_label = label2emb[child]
+                    # l.append((idx, max(0, np.dot(v_doc, v_label))))
+                    l.append((idx, 1 - spatial.distance.cosine(v_doc, v_label)))
+                (id, sim) = max(l, key=lambda t: t[1])
+                freq[id] += 1
+            else:
+                for idx, child in enumerate(children):
+                    v_label = label2emb[child]
+                    sim = 1 - spatial.distance.cosine(v_doc, v_label)
+                    # sim = max(0, np.dot(v_doc, v_label))
+                    freq[idx] *= sim
+        freq = [t / sum(freq) for t in freq]
+        if num_c == 1:
+            entropy = -1
+        else:
+            entropy = - 1.0 / math.log(num_c) * sum([t * math.log(t + 0.0001) for t in freq])
+        print(freq)
+        print(entropy)
+        if entropy > threshold:
+            break
+        current_node = children[np.argmax(freq)]
+        # break
+    if current_node == 'root':
+        children = []
+    return current_node, children
+
+def target_hier_doc_assign_bottom_up(hierarchy, doc_embs, label2emb):
+    threshold = -1
+    c2p = {}
+    for label in hierarchy:
+        for child in hierarchy[label]:
+            c2p[child] = label
+    leaf_labels = []
+    up_labels = []
+    for label in label2emb:
+        if label == 'root':
+            continue
+        if '_' in label:
+            leaf_labels.append(label)
+        else:
+            up_labels.append(label)
+    cnt = defaultdict(lambda: 0.001)
+    for doc_id in range(doc_embs.shape[0]):
+        doc_vec = doc_embs[doc_id]
+        sim_max = -1
+        selected = None
+        for label in label2emb:
+            l_vec = label2emb[label]
+            sim = 1 - spatial.distance.cosine(l_vec, doc_vec)
+            if sim > sim_max:
+                sim_max = sim
+                selected = label
+        cnt[selected] += 1
+
+    freq = [(label, cnt[label]) for label in leaf_labels]
+    sum_freq = sum([t[1] for t in freq])
+    freq = [(t[0], t[1] / sum_freq) for t in freq]
+    num_c = len(freq)
+    entropy = - 1.0 / math.log(num_c) * sum([t[1] * math.log(t[1] + 0.0001) for t in freq])
+    if entropy > threshold:
+        category = max(freq, key=lambda t: t[1])[0]
+    else:
+        for label in up_labels:
+            cnt[label] = sum([cnt[child] for child in hierarchy[label]])
+        freq = [(label, cnt[label]) for label in up_labels]
+        sum_freq = sum([t[1] for t in freq])
+        freq = [(t[0], t[1] / sum_freq) for t in freq]
+        num_c = len(freq)
+        entropy = - 1.0 / math.log(num_c) * sum([t[1] * math.log(t[1] + 0.0001) for t in freq])
+        if entropy > threshold:
+            category = max(freq, key=lambda t: t[1])[0]
+        else:
+            category = 'root'
+
+    siblings = []
+    if category != 'root':
+        siblings = hierarchy[c2p[category]]
+    return category, siblings
 
 def simple_hierarchy():
     hierarchy = {}

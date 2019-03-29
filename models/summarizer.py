@@ -22,62 +22,12 @@ from sklearn.metrics.pairwise import linear_kernel
 import networkx as nx
 import matplotlib.pyplot as plt
 
-def GCNRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels, hidden = 16):
-    assert np.allclose(similarity_scores, similarity_scores.T)
-    for i in range(similarity_scores.shape[0]):
-        similarity_scores[i,i] = similarity_scores[i,i] + 1.0
-    rowsum = 1.0 / similarity_scores.sum(1)
-    
-    normalized_sim = np.diag(rowsum).dot(similarity_scores).astype(np.float32)
-    #print(normalized_sim.sum(1))
-    # Load data
-    input_labels = np.zeros([similarity_scores.shape[0]])
-    idx_train = []
-    for p in labels:
-        if labels[p] == 1:
-            input_labels[phrase2idx[p]] = 1
-        idx_train.append(phrase2idx[p])
 
-    idx_train = torch.LongTensor(idx_train)
-    labels = torch.LongTensor(input_labels)
-    features = torch.from_numpy(np.ones([similarity_scores.shape[0], 8], dtype=np.float32))
-    adj = torch.from_numpy(normalized_sim)
-
-    # Model and optimizer
-    model = GCN(nfeat=features.shape[1],
-                nhid=hidden,
-                nclass=labels.max().item() + 1,
-                dropout=0.5)
-    optimizer = torch.optim.Adam(model.parameters(),
-                           lr=0.001)
-
-    model.train()
-    
-
-    for epoch in range(200):
-        optimizer.zero_grad()
-        output = model(features, adj)
-        loss_train = F.nll_loss(output[idx_train], labels[idx_train])
-        loss_train.backward()
-        optimizer.step()
-        if epoch % 20 == 0:
-            print("Epoch:{}, Loss:{}".format(epoch, loss_train))
-    print(labels[idx_train])
-    model.eval()
-    output = model(features, adj)
-    preds = output.max(1)[1].type_as(labels)
-    top_list = []
-    for i in range(len(phrase2idx)):
-        #if preds[i] == 1:
-        top_list.append([idx2phrase[i], math.exp(output[i][1].data.cpu().item())])
-    top_list = sorted(top_list, key=lambda x:x[1], reverse=True)
-    print(top_list[:30])
-    return top_list
-
-def seedRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels):
+def seedRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels, selected = None):
     # Manifold Ranking.
     threshold = 0.0001
     alpha = 0.85
+    u_b = 1
 
     normalized_sim = np.zeros(similarity_scores.shape)
     for i in range(similarity_scores.shape[0]):
@@ -93,11 +43,17 @@ def seedRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels
     assert num_target == similarity_scores.shape[0]
     I = np.eye(num_target)
     weight = np.zeros([num_target])
+
     for t in target_phrases:
         if t in labels:
             weight[phrase2idx[t]] = 1
-
-    scores = np.dot(np.linalg.inv(np.eye(num_target) - alpha * normalized_sim), weight)
+    if selected:
+        weight_b = np.zeros([num_target])
+        for t in selected:
+            weight_b[phrase2idx[t]] = 1
+        scores = (1-alpha) * np.dot(np.linalg.inv(np.eye(num_target) - alpha * normalized_sim), weight + u_b * alpha * weight_b)
+    else:
+        scores = (1-alpha) * np.dot(np.linalg.inv(np.eye(num_target) - alpha * normalized_sim), weight)
 
     '''
     while True:
@@ -875,7 +831,7 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
         ###################
 
         phrase2idx, idx2phrase = build_in_domain_dict(docs)
-        similarity_scores = build_target_co_occurrence_matrix(docs, phrase2idx, opt=1)
+        similarity_scores = build_target_co_occurrence_matrix(docs, phrase2idx, opt=0)
         scores = textrank(phrase2idx.keys(), similarity_scores)
         ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
         ranked_list = sorted(ranked_list, key=lambda t:-t[1])
@@ -889,9 +845,9 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
 
         
 
-        '''
+
         phrase2idx, idx2phrase = build_in_domain_dict(docs)
-        scores_, ranked_list_ = generate_caseOLAP_scores([twin_docs], docs, document_phrase_cnt, inverted_index,
+        scores_, ranked_list_ = generate_caseOLAP_scores([comparative_docs], docs, document_phrase_cnt, inverted_index,
                                                        phrase2idx, option='B')
         phrase_scores = {t[0]: t[1] for t in ranked_list_}
         background_scores = {t[0]: t[1] for t in ranked_list}
@@ -899,7 +855,7 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
             phrase_scores[phrase] *= background_scores[phrase]
         ranked_list = [(k, phrase_scores[k]) for k in phrase_scores]
         ranked_list = sorted(ranked_list, key=lambda t: -t[1])
-        '''
+
 
         labels = set()
 
@@ -907,43 +863,59 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
             if len(r[0].strip()) > 0:
                 labels.add(r[0].strip())
         target_phrase2idx, target_idx2phrase = build_in_domain_dict(docs)
+
+        round_next = None
+
         phrase2idx, idx2phrase = build_background_dict(comparative_docs, document_phrase_cnt)
 
 
         phrase2idx, idx2phrase = build_in_domain_dict(docs, phrase2idx)
         
-        similarity_scores = build_co_occurrence_matrix(comparative_docs, phrase2idx, 
+        W_bgs = build_co_occurrence_matrix(comparative_docs, phrase2idx, 
                     '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt', opt=1, graph_builder=graph_builder)
-        #embed()
-        #create_graph_from_matrix(similarity_scores, idx2phrase)
-        scores = seedRanker(phrase2idx.keys(), similarity_scores, phrase2idx, idx2phrase, labels)
 
-        bgs = {}
-        for score in scores:
-            bgs[score[0]] = score[1]
+        W_tgt = build_target_co_occurrence_matrix(docs, phrase2idx, opt=1)
+        for i in range(4):
+            
+            #embed()
+            #create_graph_from_matrix(similarity_scores, idx2phrase)
+            scores = seedRanker(phrase2idx.keys(), W_bgs, phrase2idx, idx2phrase, labels, round_next)
 
-        similarity_scores = build_target_co_occurrence_matrix(docs, phrase2idx, opt=1)
-        #create_graph_from_matrix(similarity_scores, idx2phrase)
-        scores = seedRanker(phrase2idx.keys(), similarity_scores, phrase2idx, idx2phrase, labels)
+            bgs = {}
+            for score in scores:
+                bgs[score[0]] = score[1]
 
-        tgt = {}
-        for score in scores:
-            tgt[score[0]] = score[1]
+            
+            #create_graph_from_matrix(similarity_scores, idx2phrase)
+            scores = seedRanker(phrase2idx.keys(), W_tgt, phrase2idx, idx2phrase, labels, round_next)
 
-        final = []
-        for phrase in target_phrase2idx:
-            final.append([phrase, tgt[phrase] - bgs[phrase] ])
-            #final.append(tgt[phrase] - bgs[phrase])
-        final.sort(key=lambda x:-x[1])
+            tgt = {}
+            for score in scores:
+                tgt[score[0]] = score[1]
+
+            avg = 0
+            for p in tgt:
+                avg += tgt[p] - bgs[p]
+            avg /= len(tgt)
+            final = []
+            for phrase in target_phrase2idx:
+                if tgt[phrase] - bgs[phrase] > avg:
+                    final.append([phrase, tgt[phrase] - bgs[phrase]])
+                #final.append(tgt[phrase] - bgs[phrase])
+            final.sort(key=lambda x:-x[1])
+            round_next = list(map(lambda x:x[0], final))[:100]
+            print(' '.join(round_next[:20]), len(round_next))
+            embed()
+
         '''
         final_phrase2idx, final_idx2phrase = {}, {}
         for i in final[:100]:
             final_phrase2idx[i[0]] = len(final_phrase2idx)
             final_idx2phrase[len(final_idx2phrase)] = i[0]
-        final = [x[1] for x in final[:500]]
+        final = [x[1] for x in final[:100]]
         
         similarity_scores, _ = calculate_pairwise_similarity(final_phrase2idx)
-        selected_index = select_phrases(final, similarity_scores, 5, 15)
+        selected_index = select_phrases(final, similarity_scores, 10, 15)
         phrases = [final_idx2phrase[k] for k in selected_index]
         '''
         embed()
