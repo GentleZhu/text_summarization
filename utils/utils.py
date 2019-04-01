@@ -27,7 +27,7 @@ class textGraph(object):
         self.label2id = dict()
         self.texts = []
         self.skip_doc = set()
-		#self.name2type = dict()
+        #self.name2type = dict()
 
     def load_stopwords(self, in_file):
         with open(in_file) as IN:
@@ -274,41 +274,39 @@ class textGraph(object):
         return w_a / concept.count[a] - w_b / concept.count[b], w_a, w_b, concept.count[a], concept.count[b]
 
     # backup functions
-    def _load_corpus(self, corpusIn, jsonIn, attn = False):
-        cnt = 0
+    def _load_corpus(self, corpusIn, jsonIn, relation_cat=None, reversed_hier=None, attn=False):
         ner_set = defaultdict(int)
-        ner_types = set()
         with open(corpusIn) as IN, open(jsonIn) as JSON:
             for cline, jline in tqdm(list(zip(IN.readlines(), JSON.readlines()))):
-            #for cline, jline in zip(IN.readlines(), JSON.readlines()):
-                #old freebase Linker
-                #ner = list(set(map(lambda x:x[0].strip().replace(' ','_').lower(), json.loads(jline)['ner'])))
-                #wikidata Linker
-                ner = json.loads(jline)['ner']
                 if attn:
+                    ner = json.loads(jline)['phrases']
                     for n in ner:
-                        ner_types.add(n[-1])
-                        if n[-1] in ['ORDINAL', 'CARDINAL']:
-                            continue
-                        ner_set[n[0]] += 1
-                else:
-                    d = self.Linker.expand(ner, 1)
-                    self.tuples += d
-                self.texts.append(cline)
-        filtered = [(k, ner_set[k]) for k in ner_set if ner_set[k] > 30]
+                        # ner_types.add(n[-1])
+                        # if n[-1] in ['ORDINAL', 'CARDINAL']:
+                        #    continue
+                        ner_set[n] += 1
+                # else:
+                #    d = self.Linker.expand(ner, 1)
+                #    self.tuples += d
+                #self.texts.append(cline)
+        if attn:
+            filtered = [(k, ner_set[k]) for k in ner_set if ner_set[k] > 0]
 
-        d, t2wid, wid2surface = self.Linker.expand([t[0] for t in filtered], 2)
+            d, t2wid, wid2surface = self.Linker.expand([t[0] for t in filtered], 1)
+            embed()
 
-        stats = defaultdict(int)
-        for dd in d:
-            stats[(dd[1],dd[2])] += 1
-        stats = stats.items()
+            stats = defaultdict(int)
+            for dd in d:
+                stats[(dd[1], dd[2])] += 1
+            stats = stats.items()
+            hierarchy = Hierarchy(d, relation_cat, reversed_hier)
         # print(sorted(stats, key = lambda x:x[1], reverse = True))
-        self.num_docs = len(self.texts)
+        #self.num_docs = len(self.texts)
 
-        hierarchy = Hierarchy(d)
+        hierarchy.save_hierarchy('tmp_relation_hier.p')
 
-        return hierarchy
+        if attn:
+            return hierarchy, t2wid, wid2surface
 
             
     def buildTrain(self, window_size = 1, method='doc2vec'):
@@ -825,6 +823,38 @@ def soft_assign_docs(doc_embeddings, label_embeddings, skip_docs = None):
         #print(local_list)
     return doc_assignment, top_label_assignment
 
+
+def soft_assign_docs_1(doc_embeddings, label_embeddings, skip_docs=None):
+    # Use cosine similarity to assign docs to labels
+    # doc_embeddings: 2-d numpy array
+    # label_embeddings: dict. {'football': vec, ...}
+    doc_assignment = {}
+    top_label_assignment = defaultdict(list)
+    for idx in range(doc_embeddings.shape[0]):
+        if skip_docs and idx in skip_docs:
+            continue
+        vec = doc_embeddings[idx]
+        local_list = []
+        for label in label_embeddings:
+            label_vec = label_embeddings[label]
+            score_ = np.dot(vec, label_vec)
+            local_list.append((label, score_))
+            # local_list.append((label, 1 - spatial.distance.cosine(vec, label_vec)))
+
+        m = sorted(local_list, key=lambda t: t[1], reverse=True)[:3]
+        # for mm in m:
+        #    top_label_assignment[mm[0]].append([idx, mm[1]])
+        doc_assignment[idx] = m[0][0]
+        for label in label_embeddings:
+            top_label_assignment[label].append([idx, m[0][1]])
+    for key in top_label_assignment:
+        top_label_assignment[key].sort(key=lambda x: x[1], reverse=True)
+        # top_label_assignment[key] = top_label_assignment[key][:100]
+        # if idx > 10:
+        #    break
+        # print(local_list)
+    return doc_assignment, top_label_assignment
+
 def background_doc_assign(doc_embeddings, label_embeddings):
     # Use cosine similarity to assign docs to labels
     # doc_embeddings: 2-d numpy array
@@ -861,51 +891,13 @@ def retrieve_siblings(main_doc_assignment, doc_assignment, labels, topk = 10):
 def target_hier_doc_assign_top_down(hierarchy, doc_embs, label2emb, option='hard'):
     threshold = 2
     current_node = 'root'
+    children = []
     while True:
-        print(current_node)
-        if not current_node in hierarchy:
+        #print(current_node)
+        if current_node not in hierarchy:
+            children = []
             break
-        children = hierarchy[current_node]
-        num_c = len(children)
-        if option == 'hard':
-            freq = [0 for _ in children]
-        else:
-            freq = [1.0 for _ in children]
-        for doc in doc_embs:
-            v_doc = doc_embs[doc]
-            if option == 'hard':
-                l = []
-                for idx, child in enumerate(children):
-                    v_label = label2emb[child]
-                    # l.append((idx, max(0, np.dot(v_doc, v_label))))
-                    l.append((idx, max(0, 1 - spatial.distance.cosine(v_doc, v_label))))
-                (id, sim) = max(l, key=lambda t: t[1])
-                freq[id] += 1
-            else:
-                for idx, child in enumerate(children):
-                    v_label = label2emb[child]
-                    sim = max(0, 1 - spatial.distance.cosine(v_doc, v_label))
-                    # sim = max(0, np.dot(v_doc, v_label))
-                    freq[idx] *= sim
-        freq = [t / sum(freq) for t in freq]
-        if num_c == 1:
-            entropy = -1
-        else:
-            entropy = - 1.0 / math.log(num_c) * sum([t * math.log(t + 0.0001) for t in freq])
-        print(freq)
-        print(entropy)
-        if entropy > threshold:
-            break
-        current_node = children[np.argmax(freq)]
-        # break
-    return current_node, children
 
-def target_hier_doc_assign_top_down(hierarchy, doc_embs, label2emb, option='hard'):
-    threshold = 2
-    current_node = 'root'
-    while True:
-        print(current_node)
-        assert current_node in hierarchy
         children = hierarchy[current_node]
         num_c = len(children)
         if option == 'hard':
@@ -929,18 +921,12 @@ def target_hier_doc_assign_top_down(hierarchy, doc_embs, label2emb, option='hard
                     # sim = max(0, np.dot(v_doc, v_label))
                     freq[idx] *= sim
         freq = [t / sum(freq) for t in freq]
-        if num_c == 1:
-            entropy = -1
-        else:
-            entropy = - 1.0 / math.log(num_c) * sum([t * math.log(t + 0.0001) for t in freq])
-        print(freq)
-        print(entropy)
-        if entropy > threshold:
+        #print(freq)
+        if current_node != 'root' and max(freq) <= 0.6:
             break
         current_node = children[np.argmax(freq)]
         # break
-    if current_node == 'root':
-        children = []
+        
     return current_node, children
 
 def target_hier_doc_assign_bottom_up(hierarchy, doc_embs, label2emb):
@@ -1001,11 +987,14 @@ def simple_hierarchy():
     #hierarchy['root'] = ['science', 'type_of_sport', 'politics', 'business', 'disaster']
     #hierarchy['root'] = ['science']
     #hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry', 'maths']
-    hierarchy['disaster'] = ['flood_', 'earthquake_', 'drought_', 'human_caused_', 'hurricane_', 'wildfire_']
-    hierarchy['science'] = ['astronomy_', 'physics_', 'geology_', 'biology_', 'chemistry_']
     hierarchy['politics'] = ['gay_right_', 'immigration_', 'law_', 'election_', 'gun_control_', 'military_']
     hierarchy['business'] = ['economy_', 'trade_', 'stocks_and_bonds_']
+    hierarchy['disaster'] = ['flood_', 'earthquake_', 'drought_', 'hurricane_', 'wildfire_']
     hierarchy['sports'] = ['football_', 'hockey_', 'soccer_', 'golf_', 'basketball_', 'baseball_', 'tennis_']
+    hierarchy['science'] = ['astronomy_', 'physics_', 'geology_', 'biology_', 'chemistry_']
+    
+    
+    
     
     
     return hierarchy
@@ -1098,30 +1087,29 @@ def generate_batch_data(sentences, batch_size, window_size, method='skip_gram'):
     return(batch_data, label_data)
 
 def unified_h():
-    h = {'disaster': ['flood_', 'wildfire_', 'earthquake_', 'drought_', 'hurricane_', 'human_caused_'],
+    h = {'disaster': ['flood_', 'wildfire_', 'earthquake_', 'drought_', 'hurricane_'],
          'politics': ['election_', 'immigration_', 'gun_control_', 'gay_right_', 'law_', 'military_'],
          'business': ['stocks_and_bonds_', 'trade_', 'economy_'],
          'science': ['astronomy_', 'physics_', 'geology_', 'biology_', 'chemistry_'],
          'sports': ['football_', 'hockey_', 'soccer_', 'golf_', 'basketball_', 'baseball_', 'tennis_'],
-         'football_': ['football'], 'hockey_': ['hockey'], 'soccer_': ['soccer', 'fifa', 'world_cup'],
+         'football_': ['football', 'nfl', 'american_football'], 'hockey_': ['hockey'], 'soccer_': ['soccer', 'fifa', 'world_cup'],
          'golf_': ['golf', 'tiger_woods'],
-         'basketball_': ['basketball'], 'baseball_': ['baseball'], 'tennis_': ['tennis'],
-         'astronomy_': ['astronomy', 'planet', 'comet'], 'physics_': ['physics', 'quantum_computing', 'physicist'],
-         'geology_': ['geology', 'earth_science', 'geologist'],
-         'biology_': ['biology', 'cancer', 'disease', 'species', 'frog'],
-         'chemistry_': ['chemistry', 'molecule', 'compound'],
-         'flood_': ['flood', 'floodplain', 'flowing_water'],
-         'wildfire_': ['wildfire', 'firefighter', 'wildfires'],
-         'earthquake_': ['earthquake', 'volcano', 'seismologists'],
+         'basketball_': ['basketball', 'nba'], 'baseball_': ['baseball', 'mlb'], 'tennis_': ['tennis', 'grand_slam'],
+         'astronomy_': ['astronomy', 'planet', 'spacecraft'], 'physics_': ['physics', 'proton', 'hydrogen'],
+         'geology_': ['geology', 'mount_sinai', 'andes'],
+         'biology_': ['biology', 'cancer', 'plant', 'species'],
+         'chemistry_': ['chemistry', 'protein', 'compound'],
+         'flood_': ['flood', 'floodplain', 'national_weather_service'],
+         'wildfire_': ['wildfire', 'firefighters', 'wildfires'],
+         'earthquake_': ['earthquake', 'volcano'],
          'drought_': ['drought', 'famine', 'starvation', 'climate'],
-         'hurricane_': ['hurricane', 'tornado', 'hurricane_katrina'],
-         'human_caused_': ['shooting', 'bomber', 'massacre'],
+         'hurricane_': ['hurricane', 'tornado', 'tornadoes'],
          'election_': ['election', 'presidential_election', 'special_election', 'polling_places'],
          'immigration_': ['immigration', 'illegal_immigration', 'illegal_immigrants'],
-         'gun_control_': ['gun_control', 'assault_weapons_ban', 'handguns'],
+         'gun_control_': ['gun_control', 'gun_violence', 'handguns'],
          'gay_right_': ['gay_rights', 'gay', 'gay_marriage'],
          'law_': ['law_enforcement', 'legislation', 'supreme_court'],
-         'military_': ['military'],
+         'military_': ['military', 'armed_forces'],
          'stocks_and_bonds_': ['stock', 'bond', 'stock_market'],
          'trade_': ['trade', 'world_trade_organization', 'free_agent'],
          'economy_': ['economy']}
@@ -1132,13 +1120,51 @@ def construct_unified_hierarchy(file_path):
     d = []
     for k in h:
         for dd in h[k]:
-            if k in ['disaster', 'politics', 'business', 'sports', 'science']:
+            if k in ['politics', 'business', 'disaster', 'sports', 'science']:
                 d.append([dd, k, 2])
             else:
                 d.append([dd, k, 1])
 
     h = Hierarchy(d, None, None, 'E')
     h.save_hierarchy(file_path)
+
+def calculate_distinct_map_1(labels, doc2emb, phrase2emb, label2emb, inverted_index, option):
+    # option='one-hot': one-hot, option='soft': soft
+    dist_map = {}
+    doc_label_sim = defaultdict(dict)
+    for doc in tqdm(doc2emb):
+        for label in label2emb:
+            doc_label_sim[doc][label] = np.dot(doc2emb[doc], label2emb[label])
+        if option == 'soft':
+            s = sum([np.exp(doc_label_sim[doc][x]) for x in doc_label_sim[doc]])
+            for label in label2emb:
+                doc_label_sim[doc][label] = np.exp(doc_label_sim[doc][label]) / s
+        elif option == 'one-hot':
+            s_max = max(doc_label_sim[doc])
+            for label in label2emb:
+                tmp = doc_label_sim[doc][label]
+                if tmp == s_max:
+                    doc_label_sim[doc][label] = 1.0
+                else:
+                    doc_label_sim[doc][label] = 0.0
+        else:
+            raise Exception
+    for phrase in tqdm(phrase2emb):
+        total_cnt = sum(inverted_index[phrase].values())
+        label_dist = []
+        for label in labels:
+            x = sum([doc_label_sim[str(d)][label] * inverted_index[phrase][d] / total_cnt for d in inverted_index[phrase]])
+            label_dist.append(x)
+        label_dist_s = sum(label_dist)
+        if label_dist_s == 0:
+            dist_map[phrase] = 0
+            print(phrase)
+            continue
+        label_dist = [x / label_dist_s for x in label_dist]
+        uniform_vec = [1.0 / len(labels) for _ in labels]
+        dist_score = kl_divergence(label_dist, uniform_vec)
+        dist_map[phrase] = dist_score
+    return dist_map
 
 def calculate_distinct_map(labels, doc2emb, phrase2emb, label2emb, dp_file):
     pd_map = load_dp(dp_file, reverse=True)
@@ -1198,7 +1224,7 @@ def calculate_distinct_map(labels, doc2emb, phrase2emb, label2emb, dp_file):
                 p_vec = [0.0] * len(top_labels)
 
                 # if len(pd_map[phrase]) < 100:
-                # 	continue
+                #   continue
 
                 for doc in pd_map[phrase]:
                     idx = label2id[pred_label[doc]]
@@ -1221,7 +1247,7 @@ def calculate_distinct_map(labels, doc2emb, phrase2emb, label2emb, dp_file):
                 p_vec = [0.0] * len(top_labels)
 
                 # if len(pd_map[phrase]) < 100:
-                # 	continue
+                #   continue
 
                 for doc in pd_map[phrase]:
                     if doc in docs_used:
@@ -1250,16 +1276,16 @@ def calculate_distinct_map(labels, doc2emb, phrase2emb, label2emb, dp_file):
     return dist_map
 
 def doc_assignment(doc2emb, label2emb, labels):
-	pred_label = {}
-	doc_score = {}
+    pred_label = {}
+    doc_score = {}
 
-	for doc in tqdm(doc2emb):
-		doc_emb = doc2emb[doc]
-		sim_map = classify_doc(doc_emb, label2emb, labels)
-		pred_label[doc] = sim_map[0][0]
-		doc_score[doc] = sim_map[0][1]
+    for doc in tqdm(doc2emb):
+        doc_emb = doc2emb[doc]
+        sim_map = classify_doc(doc_emb, label2emb, labels)
+        pred_label[doc] = sim_map[0][0]
+        doc_score[doc] = sim_map[0][1]
 
-	return pred_label, doc_score
+    return pred_label, doc_score
 
 def classify_doc(t_emb, target_embs, labels):
     sim_map = {}
@@ -1272,16 +1298,16 @@ def classify_doc(t_emb, target_embs, labels):
 
 def load_dp(dp_file, reverse=True):
 
-	result_map = {}
-	with open(dp_file, 'r') as f:
-		for line in f:
-			segs = line.strip('\r\n').split('\t')
-			if reverse:
-				if segs[1] not in result_map:
-					result_map[segs[1]] = set()
-				result_map[segs[1]].add(segs[0])
+    result_map = {}
+    with open(dp_file, 'r') as f:
+        for line in f:
+            segs = line.strip('\r\n').split('\t')
+            if reverse:
+                if segs[1] not in result_map:
+                    result_map[segs[1]] = set()
+                result_map[segs[1]].add(segs[0])
 
-	return result_map
+    return result_map
 
 def l1_normalize(p):
     sum_p = sum(p)
@@ -1290,13 +1316,13 @@ def l1_normalize(p):
     return [float(x)/sum_p for x in p]
 
 def kl_divergence(p, q):
-	if len(p) != len(q):
-		print('KL divergence error: p, q have different length')
-	c_entropy = 0
-	for i in range(len(p)):
-		if p[i] > 0:
-			c_entropy += p[i] * math.log(float(p[i]) / q[i])
-	return c_entropy
+    if len(p) != len(q):
+        print('KL divergence error: p, q have different length')
+    c_entropy = 0
+    for i in range(len(p)):
+        if p[i] > 0:
+            c_entropy += p[i] * math.log(float(p[i]) / q[i])
+    return c_entropy
 
 def doc_reweight(phrase_embedding, phrase_freqs, dist_map, option):
     # phrase_freqs: list of dict {'phrase_1': x_1, 'phrase_2': x_2,...}
