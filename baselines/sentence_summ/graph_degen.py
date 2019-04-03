@@ -179,8 +179,9 @@ def pick_sentences(word_scores, budget, passages, raw_sentences):
 
 def main():
     window = 3
-    budget = 665
+    budget = 2000
     stopword_path = '/shared/data/qiz3/text_summ/data/stopwords.txt'
+    ret = {}
     for ii, s in enumerate(duc_set):
         print('Running graph_degen for %d doc...' % ii)
         passages, raw_sentences = generate_duc_docs(s, stopword_path)
@@ -198,9 +199,7 @@ def main():
         summary = ''
         for i in chosen:
             summary += raw_sentences[i]
-        f = open('tmp/system/' + s + '.txt', 'w')
-        f.write(summary)
-        f.close()
+        print(summary)
 
 if __name__ == '__main__':
     main()

@@ -11,6 +11,8 @@ from nltk import pos_tag
 from IPython import embed
 from tqdm import tqdm
 
+duc_set = ['d30002']
+
 class Node_info:
     def __init__(self, name):
         self.name = name
@@ -117,15 +119,13 @@ def best_level_density(graph):
     core_or_truss_number = [node.core_n for node in graph.nodes]
     return core_or_truss_number, node_names
 
-def load_target_docs(file_path, target_docs):
+def load_target_docs(file_path):
     segIn = open(file_path)
     doc_id = -1
     passage = []
     IN_PHRASE_FLAG = False
     for cline in tqdm(segIn):
         doc_id += 1
-        if target_docs is not None and doc_id not in target_docs:
-            continue
         cline = cline.replace('<phrase>', ' <phrase> ').replace('</phrase>', ' </phrase> ').replace('\n', '')
         words = cline.split(' ')
         tmp_passage = []
@@ -143,18 +143,17 @@ def load_target_docs(file_path, target_docs):
         passage.append(tmp_passage)
     return passage
 
+def main():
+    for s in duc_set:
+        file_path = '/shared/data/qiz3/text_summ/data/DUC04/test/' + s + '.txt'
+        passage = load_target_docs(file_path)
+        graph = from_terms_to_graph(passage, window)
+        cores_dec(graph)
+        core_n, names = best_level_density(graph)
+        phrase_scores = {}
+        for (n, name) in zip(core_n, names):
+            phrase_scores[name] = n
+        pickle.dump(phrase_scores, open('../sentence_summ/data/phrase_scores_' + 's' + '.p', 'wb'))
+
 if __name__ == '__main__':
-    file_path = '/shared/data/qiz3/text_summ/text_summarization/results/2018_ca_wildfire.txt'
-    #target_docs = [5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945]
-    target_docs = None
-    window = 5
-    passage = load_target_docs(file_path, target_docs)
-    graph = from_terms_to_graph(passage, window)
-    cores_dec(graph)
-    core_n, names = best_level_density(graph)
-    ranked_list = []
-    for (n, name) in zip(core_n, names):
-        ranked_list.append((name, n))
-    ranked_list = sorted(ranked_list, key=lambda t: -t[1])
-    embed()
-    exit()
+    main()

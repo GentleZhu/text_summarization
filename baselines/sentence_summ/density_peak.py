@@ -62,6 +62,7 @@ def main():
     #corpusIn = open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.txt')
     #target_set = [5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945]
     #passages, raw_sentences = load_corpus(corpusIn, target_set, stopword_path)
+    ret = {}
     for s in duc_set:
         #if os.path.exists('res/' + s + '.txt'):
         #    continue
@@ -114,13 +115,11 @@ def main():
             chosen[pick] = True
             summary_id.append(pick)
 
-        summary = ''
-        for id in summary_id:
-            summary += raw_sentences[id]
-
-        f = open('tmp/system/' + s + '.txt', 'w')
-        f.write(summary)
-        f.close()
+        l = [-1 for _ in passages]
+        for i in summary_id:
+            l[i] = 1
+        ret[s] = l
+    return ret
 
 def calculate_similarity(passages):
     sent_num = len(passages)

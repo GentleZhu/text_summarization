@@ -7,9 +7,10 @@ import os
 import subprocess
 from nltk.stem.porter import *
 
-duc_set = ['d30048t', 'd30049t', 'd30050t', 'd30051t', 'd30053t', 'd30055t', 'd30056t', 'd30059t', 'd31001t',
-           'd31008t', 'd31009t', 'd31013t', 'd31022t', 'd31026t', 'd31031t', 'd31032t', 'd31033t', 'd31038t',
-           'd31043t', 'd31050t']
+#duc_set = ['d30048t', 'd30049t', 'd30050t', 'd30051t', 'd30053t', 'd30055t', 'd30056t', 'd30059t', 'd31001t',
+#           'd31008t', 'd31009t', 'd31013t', 'd31022t', 'd31026t', 'd31031t', 'd31032t', 'd31033t', 'd31038t',
+#           'd31043t', 'd31050t']
+duc_set = ['d30002']
 
 def load_corpus(corpusIn, target_set, stopword_path):
     stemmer = PorterStemmer()
@@ -39,36 +40,26 @@ def load_corpus(corpusIn, target_set, stopword_path):
     return passages, raw_sentences
 
 def generate_duc_docs(file_name, stopword_path):
-    prefix = '/shared/data/qiz3/text_summ/data/TextSummarizer-master/TestDUC/'
-    cwd = os.getcwd()
+    prefix = '/shared/data/qiz3/text_summ/data/DUC04/train/'
 
     stopwords = set()
     with open(stopword_path) as IN:
         for line in IN:
             stopwords.add(line.strip())
 
-    stemmer = PorterStemmer()
     passages = []
     raw_sentences = []
-    os.chdir(prefix)
-    os.chdir(file_name)
-    docs = glob('*')
-    for doc in docs:
-        with open(doc) as IN:
-            content = IN.read()
-            sentences = sent_tokenize(content)
-            for sentence in sentences:
-                if len(sentence) < 5:
-                    continue
-                e_s = []
-                words = word_tokenize(sentence)
-                for word in words:
-                    if not word in stopwords and is_eng(word):
-                        e_s.append(stemmer.stem(word.lower()))
-                if len(e_s) > 0:
-                    raw_sentences.append(sentence)
-                    passages.append(e_s)
-    os.chdir(cwd)
+    for idx, doc in enumerate(open(prefix + file_name + '.txt')):
+        content = doc.strip('\n')
+        sentences = sent_tokenize(content)
+        for sentence in sentences:
+            e_s = []
+            raw_sentences.append(sentence)
+            words = word_tokenize(sentence)
+            for word in words:
+                if not word in stopwords:
+                    e_s.append(word.lower())
+            passages.append(e_s)
     return passages, raw_sentences
 
 def generate_duc_docs_autophrase(file_name):
@@ -92,6 +83,29 @@ def generate_duc_docs_autophrase(file_name):
             if len(phrases) > 0:
                 raw_sentences.append(sentence.replace('<phrase>', '').replace('</phrase>', ''))
                 passages.append(phrases)
+    return passages, raw_sentences
+
+def generate_docs_autophrase(file_path):
+    passages = []
+    raw_sentences = []
+    for idx, content in enumerate(open(file_path).readlines()):
+        content = content.strip('\n')
+        sentences = sent_tokenize(content)
+        for sentence in sentences:
+            raw_sentences.append(sentence.replace("<phrase>", "").replace("</phrase>",""))
+            sentence = sentence.lower()
+            #if 'malibu' in sentence or 'woolsey' in sentence:
+            #    print(sentence)
+            #if len(sentence) < 5:
+            #    continue
+            phrases = re.findall('<phrase>(.*?)</phrase>', sentence)
+            #phrases = [phrase[8:-9].replace(' ', '_').lower() for phrase in phrases]
+            #print(phrases)
+            for p in set(phrases):
+                sentence = sentence.replace("<phrase>"+p+"</phrase>", p.replace(' ', '_'))
+            #if len(phrases) > 0:
+            
+            passages.append(sentence.split())
     return passages, raw_sentences
 
 def calculate_len(passages, raw_sentences):

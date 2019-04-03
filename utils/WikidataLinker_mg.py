@@ -113,8 +113,9 @@ class WikidataLinker:
 		kws={}
 		#print(phrases)
 		wid2original = defaultdict(list)
-		for phrase in phrases:
-			wid=self.title2wid(phrase)
+		print('title2wid...')
+		for phrase in tqdm(phrases):
+			wid=self.title2wid(phrase.replace('_', ' '))
 			if  wid !='':
 				kws[wid]=1
 				wid2original[wid].append(phrase)
@@ -131,16 +132,18 @@ class WikidataLinker:
 			print(tuple[0],tuple[1])
 
 	def load_kws(self,input_keywords):
-		input_kws = []
-		for tp in input_keywords:
+		input_kws = set()
+		print('load kws...')
+		for tp in tqdm(input_keywords):
 			word=tp
 			if False:
 				ner_type=tp[3]
 				if ner_type in ['TIME', 'DATE', 'CARDINAL', 'ORDINAL']:
 					continue
-			if word not in input_kws:
-				input_kws.append(word)
-		return input_kws
+			#if word not in input_kws:
+			#	input_kws.append(word)
+			input_kws.add(word)
+		return list(input_kws)
    
 
 if __name__ == '__main__': 

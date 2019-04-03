@@ -23,11 +23,11 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 
-def seedRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels, selected = None):
+def seedRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels, selected = None, opt=1):
     # Manifold Ranking.
     threshold = 0.0001
     alpha = 0.85
-    u_b = 1
+    u_b = opt
 
     normalized_sim = np.zeros(similarity_scores.shape)
     for i in range(similarity_scores.shape[0]):
@@ -805,6 +805,10 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
         scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
                                                        phrase2idx, option='A')
         ranked_list = sorted(ranked_list, key=lambda t: -t[1])
+        out=[]
+        for tp in ranked_list[:20]:
+            out.append(tp[0])
+        print(' '.join(out))
         embed()
         #phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
 
@@ -835,6 +839,10 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
         scores = textrank(phrase2idx.keys(), similarity_scores)
         ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
         ranked_list = sorted(ranked_list, key=lambda t:-t[1])
+        out=[]
+        for tp in ranked_list[:20]:
+            out.append(tp[0])
+        print(' '.join(out))
         embed()
         #phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
 
@@ -879,7 +887,7 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
             
             #embed()
             #create_graph_from_matrix(similarity_scores, idx2phrase)
-            scores = seedRanker(phrase2idx.keys(), W_bgs, phrase2idx, idx2phrase, labels, round_next)
+            scores = seedRanker(phrase2idx.keys(), W_bgs, phrase2idx, idx2phrase, labels, round_next, 1)
 
             bgs = {}
             for score in scores:
@@ -887,7 +895,7 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
 
             
             #create_graph_from_matrix(similarity_scores, idx2phrase)
-            scores = seedRanker(phrase2idx.keys(), W_tgt, phrase2idx, idx2phrase, labels, round_next)
+            scores = seedRanker(phrase2idx.keys(), W_tgt, phrase2idx, idx2phrase, labels, round_next, 1)
 
             tgt = {}
             for score in scores:

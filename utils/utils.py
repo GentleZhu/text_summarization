@@ -989,15 +989,16 @@ def simple_hierarchy():
     #hierarchy['science'] = ['astronomy', 'physics', 'geology', 'biology', 'chemistry', 'maths']
     hierarchy['politics'] = ['gay_right_', 'immigration_', 'law_', 'election_', 'gun_control_', 'military_']
     hierarchy['business'] = ['economy_', 'trade_', 'stocks_and_bonds_']
-    hierarchy['disaster'] = ['flood_', 'earthquake_', 'drought_', 'hurricane_', 'wildfire_']
+    hierarchy['disaster'] = ['earthquake_', 'drought_', 'hurricane_', 'wildfire_']
     hierarchy['sports'] = ['football_', 'hockey_', 'soccer_', 'golf_', 'basketball_', 'baseball_', 'tennis_']
-    hierarchy['science'] = ['astronomy_', 'physics_', 'geology_', 'biology_', 'chemistry_']
+    hierarchy['science'] = ['astronomy_', 'physics_', 'biology_']
     
     
     
     
     
     return hierarchy
+
 
 def target_doc_assign(concepts, docs, label_embeddings, doc_embeddings):
     top_labels = list(map(lambda x:x.root[0], concepts))
@@ -1090,15 +1091,15 @@ def unified_h():
     h = {'disaster': ['flood_', 'wildfire_', 'earthquake_', 'drought_', 'hurricane_'],
          'politics': ['election_', 'immigration_', 'gun_control_', 'gay_right_', 'law_', 'military_'],
          'business': ['stocks_and_bonds_', 'trade_', 'economy_'],
-         'science': ['astronomy_', 'physics_', 'geology_', 'biology_', 'chemistry_'],
+         'science': ['astronomy_', 'physics_', 'biology_'],
          'sports': ['football_', 'hockey_', 'soccer_', 'golf_', 'basketball_', 'baseball_', 'tennis_'],
-         'football_': ['football', 'nfl', 'american_football'], 'hockey_': ['hockey'], 'soccer_': ['soccer', 'fifa', 'world_cup'],
+         'football_': ['football', 'nfl', 'american_football'], 'hockey_': ['hockey', 'nhl'], 'soccer_': ['soccer', 'fifa', 'world_cup'],
          'golf_': ['golf', 'tiger_woods'],
          'basketball_': ['basketball', 'nba'], 'baseball_': ['baseball', 'mlb'], 'tennis_': ['tennis', 'grand_slam'],
-         'astronomy_': ['astronomy', 'planet', 'spacecraft'], 'physics_': ['physics', 'proton', 'hydrogen'],
-         'geology_': ['geology', 'mount_sinai', 'andes'],
+         'astronomy_': ['astronomy', 'planet', 'spacecraft'], 'physics_': ['physics', 'einstein', 'quantum'],
+         #'geology_': ['geology', 'mount_sinai', 'andes'],
          'biology_': ['biology', 'cancer', 'plant', 'species'],
-         'chemistry_': ['chemistry', 'protein', 'compound'],
+         #'chemistry_': ['chemistry', 'protein', 'compound'],
          'flood_': ['flood', 'floodplain', 'national_weather_service'],
          'wildfire_': ['wildfire', 'firefighters', 'wildfires'],
          'earthquake_': ['earthquake', 'volcano'],
@@ -1111,12 +1112,45 @@ def unified_h():
          'law_': ['law_enforcement', 'legislation', 'supreme_court'],
          'military_': ['military', 'armed_forces'],
          'stocks_and_bonds_': ['stock', 'bond', 'stock_market'],
-         'trade_': ['trade', 'world_trade_organization', 'free_agent'],
-         'economy_': ['economy']}
+         'trade_': ['trade', 'world_trade_organization'],
+         'economy_': ['economy', 'World_Economic_Forum', 'unemployment']}
+    return h
+
+def unified_h_1():
+    h = {'disaster': ['wildfire_', 'earthquake_', 'drought_', 'hurricane_'],
+         'politics': ['election_', 'immigration_', 'gun_control_', 'gay_right_', 'law_', 'military_'],
+         'business': ['stocks_and_bonds_', 'trade_', 'economy_'],
+         'science': ['astronomy_', 'physics_', 'biology_'],
+         'sports': ['football_', 'hockey_', 'soccer_', 'golf_', 'basketball_', 'baseball_', 'tennis_'],
+         'football_': ['football', 'nfl', 'american_football'], 'hockey_': ['hockey', 'nhl'],
+         'soccer_': ['soccer', 'fifa', 'world_cup'],
+         'golf_': ['golf', 'tiger_woods', 'masters'],
+         'basketball_': ['basketball', 'nba'], 'baseball_': ['baseball', 'mlb'], 'tennis_': ['tennis', 'grand_slam'],
+         'astronomy_': ['astronomy', 'planet', 'spacecraft'], 'physics_': ['physics', 'einstein', 'relativity'],
+         #'geology_': ['geology', 'mount_sinai', 'andes'],
+         'biology_': ['biology', 'cancer', 'plant', 'species'],
+         #'chemistry_': ['chemistry', 'protein', 'compound'],
+         #'flood_': ['flood', 'floodplain', 'national_weather_service'],
+         'wildfire_': ['wildfire', 'firefighters', 'wildfires'],
+         'earthquake_': ['earthquake', 'volcano'],
+         'drought_': ['drought', 'famine', 'starvation', 'climate'],
+         'hurricane_': ['hurricane', 'tornado', 'tornadoes'],
+         'election_': ['election', 'presidential_election', 'special_election', 'polling_places'],
+         'immigration_': ['immigration', 'illegal_immigration', 'illegal_immigrants'],
+         'gun_control_': ['gun_control', 'gun_violence', 'handguns'],
+         'gay_right_': ['gay_rights', 'gay', 'gay_marriage'],
+         'law_': ['law_enforcement', 'legislation', 'supreme_court'],
+         'military_': ['military', 'armed_forces'],
+         'stocks_and_bonds_': ['stock', 'bond', 'stock_market'],
+         'trade_': ['trade', 'world_trade_organization'],
+         'economy_': ['economy', 'interest_rates', 'unemployment']}
     return h
 
 def construct_unified_hierarchy(file_path):
-    h = unified_h()
+    if 'washington' in file_path:
+        h = unified_h_1()
+    else:
+        h = unified_h()
     d = []
     for k in h:
         for dd in h[k]:
@@ -1140,7 +1174,7 @@ def calculate_distinct_map_1(labels, doc2emb, phrase2emb, label2emb, inverted_in
             for label in label2emb:
                 doc_label_sim[doc][label] = np.exp(doc_label_sim[doc][label]) / s
         elif option == 'one-hot':
-            s_max = max(doc_label_sim[doc])
+            s_max = max(doc_label_sim[doc].values())
             for label in label2emb:
                 tmp = doc_label_sim[doc][label]
                 if tmp == s_max:
@@ -1153,12 +1187,16 @@ def calculate_distinct_map_1(labels, doc2emb, phrase2emb, label2emb, inverted_in
         total_cnt = sum(inverted_index[phrase].values())
         label_dist = []
         for label in labels:
-            x = sum([doc_label_sim[str(d)][label] * inverted_index[phrase][d] / total_cnt for d in inverted_index[phrase]])
-            label_dist.append(x)
+            tmp_x = 0
+            for d in inverted_index[phrase]:
+                if not str(d) in doc_label_sim:
+                    continue
+                tmp_x += doc_label_sim[str(d)][label] * inverted_index[phrase][d] / total_cnt
+            label_dist.append(tmp_x)
         label_dist_s = sum(label_dist)
         if label_dist_s == 0:
             dist_map[phrase] = 0
-            print(phrase)
+            #print(phrase)
             continue
         label_dist = [x / label_dist_s for x in label_dist]
         uniform_vec = [1.0 / len(labels) for _ in labels]

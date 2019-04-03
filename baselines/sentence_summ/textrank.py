@@ -8,8 +8,9 @@ def main():
     para = 0.5
     alpha = 0.85
     beta = 0.1
-    budget = 665
+    budget = 2000
     stopword_path = '/shared/data/qiz3/text_summ/data/stopwords.txt'
+    ret = {}
     for ii, s in enumerate(duc_set):
         print('Running textrank for %d doc...' % ii)
         passages, raw_sentences = generate_duc_docs(s, stopword_path)
@@ -64,13 +65,14 @@ def main():
             chosen[pick] = True
             summary_id.append(pick)
 
-        summary = ''
-        for id in summary_id:
-            summary += raw_sentences[id]
+        for i in summary_id:
+            print(raw_sentences[i])
+        l = [-1 for _ in passages]
+        for i in summary_id:
+            l[i] = 1
+        ret[s] = l
 
-        f = open('tmp/system/' + s + '.txt', 'w')
-        f.write(summary)
-        f.close()
+    return ret
 
 def calculate_similarity(passages):
     sent_num = len(passages)

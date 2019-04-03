@@ -6,6 +6,7 @@ import math
 from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
 from scipy import spatial
+import sys
 
 def mmr(similarity_scores, phrase_scores, budget, passages, raw_sentences):
     para = 0.5
@@ -14,7 +15,7 @@ def mmr(similarity_scores, phrase_scores, budget, passages, raw_sentences):
 
     scores = {}
     for idx, sentence in enumerate(passages):
-        score = sum([phrase_scores[phrase] for phrase in sentence])
+        score = sum([phrase_scores[phrase] if phrase in phrase_scores else 0 for phrase in sentence ])
         scores[idx] = score
 
     chosen = [False for _ in raw_sentences]
@@ -42,15 +43,15 @@ def mmr(similarity_scores, phrase_scores, budget, passages, raw_sentences):
     return summary_id
 
 def select_sentences(phrase_scores, budget, passages, raw_sentences):
-    lambda_ = 4
+    lambda_ = 2
     c = 0.5
-    sent_scores = {}
+    sent_scores = []
     sent_phrases = defaultdict(set)
     for idx, sentence in enumerate(passages):
         sent_phrases[idx] = set(sentence)
-        score = sum([phrase_scores[phrase] for phrase in sentence])
-        sent_scores[idx] = score
-
+        score = sum([phrase_scores[phrase] if phrase in phrase_scores else 0 for phrase in sentence ])
+        sent_scores.append(score)
+    embed()
     chosen = list()
     current_len = 0
     current_p = set()
@@ -60,15 +61,24 @@ def select_sentences(phrase_scores, budget, passages, raw_sentences):
         for idx in range(len(passages)):
             if idx in chosen or current_len + len(raw_sentences[idx]) > budget:
                 continue
-            score_gain = sent_scores[idx] + lambda_ * len(sent_phrases[idx] - current_p)
-            score_gain /= math.pow(len(raw_sentences[idx]), c)
+            addtional_cnt = 0
+            for p in sent_phrases[idx]:
+                if p in phrase_scores and p not in current_p:
+                    addtional_cnt += 1
+            score_gain = sent_scores[idx] + lambda_ * (len(current_p) + addtional_cnt) / len(phrase_scores)
+            #score_gain /= math.pow(len(raw_sentences[idx]), c)
+            #score_gain = sent_scores[idx]
             if score_gain > max_:
                 max_ = score_gain
                 max_idx = idx
         if max_idx != -1:
             chosen.append(max_idx)
+            #print(max_idx, raw_sentences[max_idx])
             current_len += len(raw_sentences[max_idx])
-            current_p |= sent_phrases[max_idx]
+            for p in sent_phrases[max_idx]:
+                if p in phrase_scores:
+                    current_p.add(p)
+            print('current #kw is {}'.format(len(current_p)))
         else:
             break
     return chosen
@@ -93,7 +103,25 @@ def calculate_similarity(passages, raw_sentences):
                 #similarity_scores[i][j] = 1 - spatial.distance.cosine(sent_X[i], sent_X[j])
     return similarity_scores
 
-def main():
+def generate_results():
+    budget = 2000
+    ret = {}
+    for idx, s in enumerate(duc_set):
+        phrase_scores = pickle.load(open('data/phrase_scores_' + s + '.p', 'rb'))
+        file_path ='/shared/data/qiz3/text_summ/data/DUC04/test/' + s + '.txt'
+        passages, raw_sentences = generate_docs_autophrase(file_path)
+        if True:
+            chosen = select_sentences(phrase_scores, budget, passages, raw_sentences)
+        else:
+            similarity_scores = calculate_similarity(passages, raw_sentences)
+            chosen = mmr(similarity_scores, phrase_scores, budget, passages, raw_sentences)
+        l = [-1 for _ in passages]
+        for i in chosen:
+            l[i] = 1
+        ret[s] = l
+    return ret
+
+def main_1():
     budget = 665
     phrase_scores = pickle.load(open('phrase_scores.p', 'rb'))
     for idx, s in enumerate(duc_set):
@@ -110,5 +138,42 @@ def main():
         f.write(summary)
         f.close()
 
+def main():
+    budget = 665
+    phrase_scores = pickle.load(open('phrase_scores.p', 'rb'))
+    file_path = '/shared/data/qiz3/text_summ/text_summarization/results/2018_ca_wildfire.txt'
+    passages, raw_sentences = generate_docs_autophrase(file_path)
+    #similarity_scores = calculate_similarity(passages, raw_sentences)
+    chosen = select_sentences(phrase_scores, budget, passages, raw_sentences)
+    #chosen = mmr(similarity_scores, phrase_scores, budget, passages, raw_sentences)
+    summary = ''
+    for i in chosen:
+        summary += raw_sentences[i]
+    embed()
+    exit()
+
 if __name__ == '__main__':
-    main()
+    budget = 2000
+    phrase_scores = pickle.load(open(sys.argv[1], 'rb'))
+    #passages = pickle.load(open(sys.argv[2], 'rb'))
+    file_path = '/shared/data/qiz3/text_summ/text_summarization/results/2018_ca_wildfire.txt'
+    passages, raw_sentences = generate_docs_autophrase(file_path)
+    #raw_sentences = [' '.join(p) for p in passages]
+    #similarity_scores = calculate_similarity(passages, raw_sentences)
+    if True:
+        chosen = select_sentences(phrase_scores, budget, passages, raw_sentences)
+        #chosen = mmr(similarity_scores, phrase_scores, budget, passages, raw_sentences)
+        summary = ''
+        for idx,i in enumerate(chosen):
+            summary += raw_sentences[i]
+            print(idx, raw_sentences[i])
+    else:
+        similarity_scores = calculate_similarity(passages, raw_sentences)
+        #chosen = select_sentences(phrase_scores_s, budget, passages, raw_sentences)
+        chosen = mmr(similarity_scores, phrase_scores, budget, passages, raw_sentences)
+        summary = ''
+        for i in chosen:
+            print(raw_sentences[i])
+            #summary += raw_sentences[i]
+    embed()
+    exit()
