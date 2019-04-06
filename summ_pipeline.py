@@ -70,6 +70,7 @@ def load_config(file_path):
 	config['gpu'] = int(config['gpu'])
 	config['topk'] = int(config['topk'])
 	config['expan'] = int(config['expan'])
+	config['input_file'] = config['input_file'].split(',')
 	config['preprocess'] = json.loads(config['preprocess'].lower())
 	return config
 
@@ -304,242 +305,245 @@ if __name__ == '__main__':
 		graph_builder.load_stopwords('/shared/data/qiz3/text_summ/data/stopwords.txt')
 		graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
 		graph_builder.load_label("{}_expan-{}_label.p".format(config['dataset'], config['expan']))
-		with open(config['input_file']) as IN:
-			input_docs = []
-			docs = []
-			for line in IN:
-				#print(line)
-				#sys.exit(-1)
-				line = line.strip()
-				phrases = re.findall("<phrase>(.*?)</phrase>", line)
-				#print(phrases)
-				#result = {}
-				for p in set(phrases):
-					line = line.replace("<phrase>"+p+"</phrase>", p.replace(' ', '_'))
-				input_docs.append(' '.join([p.replace(' ', '_').lower() for p in phrases]))
-				docs.append(graph_builder.normalize(line))
-				#break
-		print(config['input_file'], len(input_docs), len(docs))
-		#pickle.dump(docs, open('bams_wildfire.p', 'wb'))
-		
+		for in_file in config['input_file']:
+			with open(in_file) as IN:
+				input_docs = []
+				docs = []
+				for line in IN:
+					#print(line)
+					#sys.exit(-1)
+					line = line.strip()
+					phrases = re.findall("<phrase>(.*?)</phrase>", line)
+					#print(phrases)
+					#result = {}
+					for p in set(phrases):
+						line = line.replace("<phrase>"+p+"</phrase>", p.replace(' ', '_'))
+					input_docs.append(' '.join([p.replace(' ', '_').lower() for p in phrases]))
+					docs.append(graph_builder.normalize(line))
+					#break
+			print(in_file, len(input_docs), len(docs))
+			#continue
+			#pickle.dump(docs, open('bams_wildfire.p', 'wb'))
+			
 
-		#TODO(@jingjing): add weighted average embedding for comparative search(route 2 in the slides)
-		if config['comparative_opt'] == 'knn': #KNN comparative search, route 0 and route 1
-			document_phrase_cnt, inverted_index = collect_statistics(
-				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
-			#graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
-			#graph_builder.load_label("{}_label.p".format(config['dataset']))
-
-			if True:
-				model = load_model(config)
-				doc2emb = model.doc_embeddings()
-				#print(model.doc_embeddings().shape)
-				#print(model.input_embeddings().shape)
-				label2emb = dict()
-				
-				for k in graph_builder.label2id:
-				#for k in siblings:
-				    label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
-				print(len(graph_builder.skip_doc))
-				
-			else:
-				doc2emb = load_doc_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/d.vec')
-				label2emb = load_label_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/l.vec')
-
-			doc_assignment,top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
-
-			if config['vec_option'] == 'weighted':
-				word_embs = model.input_embeddings()
-				phrase2emb = {graph_builder.id2name[x]: word_embs[x]
-							  for x in tqdm(range(word_embs.shape[0]))}
-				phrase_freq = defaultdict(int)
-				for doc in docs:
-					for phrase in doc:
-						phrase_freq[phrase] += 1
-				new_emb = doc_reweight(phrase2emb, phrase_freq, None, 'B')
-				results = summarizer.compare(config, None, None, None, new_emb, doc2emb, graph_builder.skip_doc)
-
-			elif config['vec_option'] == 'tfidf':
-				feature_vectors, vectorizer = tf_idf_vectorizer(
+			#TODO(@jingjing): add weighted average embedding for comparative search(route 2 in the slides)
+			if config['comparative_opt'] == 'knn': #KNN comparative search, route 0 and route 1
+				document_phrase_cnt, inverted_index = collect_statistics(
 					'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
-				# comparative documents
-				results = summarizer.compare(config, input_docs, feature_vectors, vectorizer, None, None,
-											 graph_builder.skip_doc)
-			# results = summarizer.compare(config, input_docs, feature_vectors, vectorizer)
-			# print(results)
+				#graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
+				#graph_builder.load_label("{}_label.p".format(config['dataset']))
 
-			count = defaultdict(int)
-			for idx in results:
-				count[doc_assignment[idx]] += 1
-				#print(idx, doc_assignment[idx])
-			
+				if True:
+					model = load_model(config)
+					doc2emb = model.doc_embeddings()
+					#print(model.doc_embeddings().shape)
+					#print(model.input_embeddings().shape)
+					label2emb = dict()
+					
+					for k in graph_builder.label2id:
+					#for k in siblings:
+					    label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy() 
+					print(len(graph_builder.skip_doc))
+					
+				else:
+					doc2emb = load_doc_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/d.vec')
+					label2emb = load_label_emb('/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_jt/l.vec')
 
-			category = max(count.items(), key=operator.itemgetter(1))[0]
-			#category = 'election_'
-			print("category distribution:{}, inferred topic is {}".format(count, category))
+				doc_assignment,top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
 
-			hierarchy = simple_hierarchy()
-			for h in hierarchy:
-				if category in hierarchy[h]:
-					all_siblings = hierarchy[h]
-					break
-
-			siblings_docs = [list(map(lambda x:x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings if l != category]
-			twin_docs = list(map(lambda x:x[0], top_label_assignment[category][:config['topk']]))
-
-		elif config['comparative_opt'] == 'weighted_avg':
-			document_phrase_cnt, inverted_index = collect_statistics(
-				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
-			model = load_model(config)
-			word_embs = model.input_embeddings()
-			phrase2emb = {}
-			for phrase in inverted_index:
-				if not phrase in graph_builder.name2id:
-					continue
-				phrase2emb[phrase] = word_embs[graph_builder.name2id[phrase]]
-			phrase_freqs = []
-			for doc in docs:
-				phrase_freq = defaultdict(int)
-				for phrase in doc:
-					phrase_freq[phrase] += 1
-				phrase_freqs.append(phrase_freq)
-
-			doc2emb = model.doc_embeddings()
-			label2emb = dict()
-
-			for k in graph_builder.label2id:
-				# for k in siblings:
-				label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy()
-
-			document_phrase_cnt, inverted_index = collect_statistics(
-				'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset'].replace('_lead-3', '')))
-			#graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
-			#graph_builder.load_label("{}_label.p".format(config['dataset']))
-
-			doc_assignment, top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
-
-			
-			if config['preprocess']:
-				#############################################
-				# Used for calculating dist map and doc_emb #
-				#############################################
-				new_labels = []
-				for label in label2emb:
-					if '_' in label:
-						new_labels.append(label)
-				print(new_labels)
-				new_doc2emb = {str(i): doc2emb[i] for i in range(doc2emb.shape[0]) if i not in graph_builder.skip_doc}
-				dist_map = calculate_distinct_map_1(new_labels, new_doc2emb, phrase2emb, label2emb, inverted_index,
-													'soft')
-				pickle.dump(dist_map,
-							open('dist_map_{}_{}_expan-{}.p'.format(config['method'], config['dataset'],
-																	config['expan']),
-								 'wb'))
-				new_doc_emb = {}
-				for d in tqdm(range(doc2emb.shape[0])):
-					new_doc_emb[d] = doc_reweight(phrase2emb, [document_phrase_cnt[d]], dist_map, 'B')
-				pickle.dump(dist_map, open('{}_expan-{}_dist_map.p'.format(config['dataset'], config['expan']), 'wb'))
-				pickle.dump(new_doc_emb,
-							open('{}_expan-{}_bg_doc2emb.p'.format(config['dataset'], config['expan']), 'wb'))
-			else:
-				dist_map = pickle.load(open('{}_expan-{}_dist_map.p'.format(config['dataset'], config['expan']), 'rb'))
-				new_doc_emb = pickle.load(open('{}_expan-{}_bg_doc2emb.p'.format(config['dataset'], config['expan']), 'rb'))
-
-			new_emb = doc_reweight(phrase2emb, phrase_freqs, dist_map, 'B')
-
-			if False:
-				new_doc_emb = {}
-				related_docs = []
-				with open('../data/NYT_annotated_corpus/wp_1617.txt', 'r') as IN:
-					for idx,line in enumerate(IN):
-						phrase_freq = defaultdict(int)
-						for phrase in line:
+				if config['vec_option'] == 'weighted':
+					word_embs = model.input_embeddings()
+					phrase2emb = {graph_builder.id2name[x]: word_embs[x]
+								  for x in tqdm(range(word_embs.shape[0]))}
+					phrase_freq = defaultdict(int)
+					for doc in docs:
+						for phrase in doc:
 							phrase_freq[phrase] += 1
-						related_docs.append(line.strip())
-						new_doc_emb[idx] = doc_reweight(phrase2emb, [phrase_freq], dist_map, 'B')
-			
-			hierarchy = simple_hierarchy()
+					new_emb = doc_reweight(phrase2emb, phrase_freq, None, 'B')
+					results = summarizer.compare(config, None, None, None, new_emb, doc2emb, graph_builder.skip_doc)
 
-			if False:
+				elif config['vec_option'] == 'tfidf':
+					feature_vectors, vectorizer = tf_idf_vectorizer(
+						'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
+					# comparative documents
+					results = summarizer.compare(config, input_docs, feature_vectors, vectorizer, None, None,
+												 graph_builder.skip_doc)
+				# results = summarizer.compare(config, input_docs, feature_vectors, vectorizer)
+				# print(results)
+
 				count = defaultdict(int)
-				for doc_agg_emb in new_emb:
-					sim_max = -1
-					category = None
-					for label in label2emb:
-						if '_' not in label:
-							continue
-						sim = 1 - spatial.distance.cosine(doc_agg_emb, label2emb[label])
-						if sim > sim_max:
-							sim_max = sim
-							category = label
-					count[category]+= 1
-				print(count)
+				for idx in results:
+					count[doc_assignment[idx]] += 1
+					#print(idx, doc_assignment[idx])
 				
-				picked_category = max(count.items(), key=operator.itemgetter(1))[0]
-				print('New docs assigned to ' + picked_category)
-			else:
-				hierarchy['root'] = ['disaster', 'science', 'politics', 'business', 'sports']
-				category,sub_cat = target_hier_doc_assign_top_down(hierarchy, new_emb, label2emb)
-				print('inferred category:{}'.format(category))
-			#embed()
-			#category = 'election_'
-			#sub_cat = []
 
-			if len(sub_cat) == 0:
+				category = max(count.items(), key=operator.itemgetter(1))[0]
+				#category = 'election_'
+				print("category distribution:{}, inferred topic is {}".format(count, category))
+
+				hierarchy = simple_hierarchy()
 				for h in hierarchy:
 					if category in hierarchy[h]:
 						all_siblings = hierarchy[h]
 						break
-				#
-				siblings_docs = [list(map(lambda x: x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings
-								 if l != category]
-				twin_docs = list(map(lambda x: x[0], top_label_assignment[category][:config['topk']]))
 
-				comp_pool = list(map(lambda x: x[0],top_label_assignment[category]))
-			else:
-				assert category in ['disaster', 'science', 'politics', 'business', 'sports']
-				twin_docs = []
-				comp_pool = []
-				for cat in sub_cat:
-					twin_docs += list(map(lambda x: x[0], top_label_assignment[cat][:config['topk']]))
-					comp_pool += list(map(lambda x: x[0],top_label_assignment[cat]))
-				siblings_docs = []
-				for _category in hierarchy['root']:
-					tmp_docs = []
-					if category == _category:
+				siblings_docs = [list(map(lambda x:x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings if l != category]
+				twin_docs = list(map(lambda x:x[0], top_label_assignment[category][:config['topk']]))
+
+			elif config['comparative_opt'] == 'weighted_avg':
+				document_phrase_cnt, inverted_index = collect_statistics(
+					'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset']))
+				model = load_model(config)
+				word_embs = model.input_embeddings()
+				phrase2emb = {}
+				for phrase in inverted_index:
+					if not phrase in graph_builder.name2id:
 						continue
-					for cat in hierarchy[_category]:
-						tmp_docs += list(map(lambda x: x[0], top_label_assignment[cat][:config['topk']]))
-					siblings_docs.append(tmp_docs) 
+					phrase2emb[phrase] = word_embs[graph_builder.name2id[phrase]]
+				phrase_freqs = []
+				for doc in docs:
+					phrase_freq = defaultdict(int)
+					for phrase in doc:
+						phrase_freq[phrase] += 1
+					phrase_freqs.append(phrase_freq)
+
+				doc2emb = model.doc_embeddings()
+				label2emb = dict()
+
+				for k in graph_builder.label2id:
+					# for k in siblings:
+					label2emb[k] = model.label_embed.weight[graph_builder.label2id[k], :].data.cpu().numpy()
+
+				document_phrase_cnt, inverted_index = collect_statistics(
+					'/shared/data/qiz3/text_summ/src/jt_code/doc2cube/tmp_data/{}.txt'.format(config['dataset'].replace('_lead-3', '')))
+				#graph_builder.load_mapping("{}_expan-{}_mapping.txt".format(config['dataset'], config['expan']))
+				#graph_builder.load_label("{}_label.p".format(config['dataset']))
+
+				doc_assignment, top_label_assignment = soft_assign_docs(doc2emb, label2emb, graph_builder.skip_doc)
+
+				
+				if config['preprocess']:
+					#############################################
+					# Used for calculating dist map and doc_emb #
+					#############################################
+					new_labels = []
+					for label in label2emb:
+						if '_' in label:
+							new_labels.append(label)
+					print(new_labels)
+					new_doc2emb = {str(i): doc2emb[i] for i in range(doc2emb.shape[0]) if i not in graph_builder.skip_doc}
+					dist_map = calculate_distinct_map_1(new_labels, new_doc2emb, phrase2emb, label2emb, inverted_index,
+														'soft')
+					pickle.dump(dist_map,
+								open('dist_map_{}_{}_expan-{}.p'.format(config['method'], config['dataset'],
+																		config['expan']),
+									 'wb'))
+					new_doc_emb = {}
+					for d in tqdm(range(doc2emb.shape[0])):
+						new_doc_emb[d] = doc_reweight(phrase2emb, [document_phrase_cnt[d]], dist_map, 'B')
+					pickle.dump(dist_map, open('{}_expan-{}_dist_map.p'.format(config['dataset'], config['expan']), 'wb'))
+					pickle.dump(new_doc_emb,
+								open('{}_expan-{}_bg_doc2emb.p'.format(config['dataset'], config['expan']), 'wb'))
+				else:
+					dist_map = pickle.load(open('{}_expan-{}_dist_map.p'.format(config['dataset'], config['expan']), 'rb'))
+					new_doc_emb = pickle.load(open('{}_expan-{}_bg_doc2emb.p'.format(config['dataset'], config['expan']), 'rb'))
+
+				new_emb = doc_reweight(phrase2emb, phrase_freqs, dist_map, 'B')
+
+				if False:
+					new_doc_emb = {}
+					related_docs = []
+					with open('../data/NYT_annotated_corpus/wp_1617.txt', 'r') as IN:
+						for idx,line in enumerate(IN):
+							phrase_freq = defaultdict(int)
+							for phrase in line:
+								phrase_freq[phrase] += 1
+							related_docs.append(line.strip())
+							new_doc_emb[idx] = doc_reweight(phrase2emb, [phrase_freq], dist_map, 'B')
+				
+				hierarchy = simple_hierarchy()
+
+				if False:
+					count = defaultdict(int)
+					for doc_agg_emb in new_emb:
+						sim_max = -1
+						category = None
+						for label in label2emb:
+							if '_' not in label:
+								continue
+							sim = 1 - spatial.distance.cosine(doc_agg_emb, label2emb[label])
+							if sim > sim_max:
+								sim_max = sim
+								category = label
+						count[category]+= 1
+					print(count)
+					
+					picked_category = max(count.items(), key=operator.itemgetter(1))[0]
+					print('New docs assigned to ' + picked_category)
+				else:
+					hierarchy['root'] = ['disaster', 'science', 'politics', 'business', 'sports']
+					category,sub_cat = target_hier_doc_assign_top_down(hierarchy, new_emb, label2emb)
+					print('inferred category:{}'.format(category))
+				#embed()
+				#category = 'election_'
+				#sub_cat = []
+
+				if len(sub_cat) == 0:
+					for h in hierarchy:
+						if category in hierarchy[h]:
+							all_siblings = hierarchy[h]
+							break
+					#
+					siblings_docs = [list(map(lambda x: x[0], top_label_assignment[l][:config['topk']])) for l in all_siblings
+									 if l != category]
+					twin_docs = list(map(lambda x: x[0], top_label_assignment[category][:config['topk']]))
+
+					comp_pool = list(map(lambda x: x[0],top_label_assignment[category]))
+				else:
+					assert category in ['disaster', 'science', 'politics', 'business', 'sports']
+					twin_docs = []
+					comp_pool = []
+					for cat in sub_cat:
+						twin_docs += list(map(lambda x: x[0], top_label_assignment[cat][:config['topk']]))
+						comp_pool += list(map(lambda x: x[0],top_label_assignment[cat]))
+					siblings_docs = []
+					for _category in hierarchy['root']:
+						tmp_docs = []
+						if category == _category:
+							continue
+						for cat in hierarchy[_category]:
+							tmp_docs += list(map(lambda x: x[0], top_label_assignment[cat][:config['topk']]))
+						siblings_docs.append(tmp_docs) 
 
 
-			comparative_docs = summarizer.compare(config, None, None, None, new_emb, new_doc_emb, graph_builder.skip_doc, comp_pool)
-			#comparative_docs = summarizer.compare(config, None, None, None, new_emb, new_doc_emb)
+				comparative_docs = summarizer.compare(config, None, None, None, new_emb, new_doc_emb, graph_builder.skip_doc, comp_pool)
+				#comparative_docs = summarizer.compare(config, None, None, None, new_emb, new_doc_emb)
+				
+				if 'NYT' in config['dataset']:
+					docs_info = []
+					with open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json') as meta_json:
+						for idx,line in tqdm(enumerate(meta_json)):
+							tmp = json.loads(line)
+							docs_info.append({'title': tmp['title'], 'type': tmp['type']})
+
+				#embed()
+					if False:
+						with open('tmp_{}.txt'.format(config['input_file'].lstrip('results/').rstrip('.txt')), 'w') as OUT:
+							for d in comparative_docs:
+								OUT.write(docs_info[d]['title'] + '\n')
+				else:
+					docs_info = []
+					with open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/washington_full.txt') as meta_json:
+						for idx,line in tqdm(enumerate(meta_json)):
+							docs_info.append({'title': line})
+
+				#embed()
+					with open('tmp_{}.txt'.format(config['input_file'].lstrip('results/').rstrip('.txt')), 'w') as OUT:
+						for d in comparative_docs:
+							OUT.write(docs_info[d]['title'] + '\n')
+
 			
-			if 'NYT' in config['dataset']:
-				docs_info = []
-				with open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.json') as meta_json:
-					for idx,line in tqdm(enumerate(meta_json)):
-						tmp = json.loads(line)
-						docs_info.append({'title': tmp['title'], 'type': tmp['type']})
-
-			#embed()
-				with open('tmp_{}.txt'.format(config['input_file'].lstrip('results/').rstrip('.txt')), 'w') as OUT:
-					for d in comparative_docs:
-						OUT.write(docs_info[d]['title'] + '\n')
-			else:
-				docs_info = []
-				with open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/washington_full.txt') as meta_json:
-					for idx,line in tqdm(enumerate(meta_json)):
-						docs_info.append({'title': line})
-
-			#embed()
-				with open('tmp_{}.txt'.format(config['input_file'].lstrip('results/').rstrip('.txt')), 'w') as OUT:
-					for d in comparative_docs:
-						OUT.write(docs_info[d]['title'] + '\n')
-
-		
-		summarizer.summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_phrase_cnt, inverted_index, graph_builder=graph_builder)
+			summarizer.summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_phrase_cnt, inverted_index, graph_builder=graph_builder, file_name=in_file)
 			
 			#break
 

@@ -1,6 +1,7 @@
 from scipy import spatial
 import math
 import numpy as np
+import pickle
 from IPython import embed
 
 from utils import *
@@ -55,9 +56,13 @@ def select_sentences(budget, scores, sentences):
 
 def main():
     delta = 0.22
-    budget = 665
+    ap = True
+    if ap:
+        budget = 1000
+    else:
+        budget = 3
     para = 0.5
-    beta = 0.1
+    beta = 0.0
     stopword_path = '/shared/data/qiz3/text_summ/data/stopwords.txt'
     #corpusIn = open('/shared/data/qiz3/text_summ/data/NYT_annotated_corpus/NYT_corpus.txt')
     #target_set = [5804, 5803, 17361, 20859, 18942, 18336, 21233, 19615, 17945]
@@ -82,20 +87,18 @@ def main():
         for i in tqdm(range(sent_num)):
             div_scores[i] = calculate_div_score(i, sentence_vecs, repr_scores)
             #scores[i] = repr_scores[i]
-            scores[i] = math.log(div_scores[i] + 0.01) + math.log(len_scores[i] + 0.01) + math.log(repr_scores[i] + 0.01)
+            scores[i] = math.log(div_scores[i] + 0.001) + math.log(len_scores[i] + 0.001) + math.log(repr_scores[i] + 0.001)
 
-        '''
-        chosen = select_sentences(budget, scores, raw_sentences)
-        summary = ''
-        for i in chosen:
-            summary += ' ' + raw_sentences[i]
-        '''
+        #chosen = select_sentences(budget, scores, raw_sentences)
+        #summary = ''
+        #for i in chosen:
+        #    summary += ' ' + raw_sentences[i]
 
         chosen = [False for _ in raw_sentences]
         summary_id = []
 
         current_len = 0
-        while current_len < budget:
+        while len(summary_id) < budget:
             maxscore = -9999
             pick = -1
             for i in range(sent_num):
@@ -106,7 +109,7 @@ def main():
                     if scores[i] - similarity_scores[i][j] * scores[j] * para < tmp_score:
                         tmp_score = scores[i] - similarity_scores[i][j] * scores[j] * para
                 new_score = tmp_score / math.pow(len(passages[i]), beta)
-                if new_score > maxscore and len(raw_sentences[i]) + current_len < budget:
+                if new_score > maxscore:
                     maxscore = new_score
                     pick = i
             if pick == -1:
@@ -115,11 +118,27 @@ def main():
             chosen[pick] = True
             summary_id.append(pick)
 
+        #summary = ''
+        #for id in summary_id:
+        #    summary += raw_sentences[id] + ' '
+
         l = [-1 for _ in passages]
-        for i in summary_id:
-            l[i] = 1
-        ret[s] = l
-    return ret
+        if ap:
+            for idx, i in enumerate(summary_id):
+                l[i] = len(summary_id) - idx
+            ret[s] = l
+        else:
+            for i in summary_id:
+                l[i] = 1
+            ret[s] = l
+
+
+        #f = open('/shared/data/qiz3/text_summ/text_summarization/baselines/sentence_summ/tmp/system1/' + s + 't.txt',
+        #         'w')
+        #f.write(summary)
+        #f.close()
+
+    pickle.dump(ret, open('./data/density_peak_sentence_res.p', 'wb'))
 
 def calculate_similarity(passages):
     sent_num = len(passages)
@@ -133,8 +152,8 @@ def calculate_similarity(passages):
                 for word in passages[i]:
                     if word in passages[j]:
                         sim += 1
-                sim /= (math.log(len(set(passages[i])) + 1) + math.log(len(set(passages[j])) + 1))
-                #sim = len(set(passages[i]) & set(passages[j])) / (math.log(len(set(passages[i])) + 1) + math.log(len(set(passages[j])) + 1))
+                #sim /= (math.log(len(set(passages[i])) + 1) + math.log(len(set(passages[j])) + 1))
+                sim = len(set(passages[i]) & set(passages[j])) / (math.log(len(set(passages[i])) + 1) + math.log(len(set(passages[j])) + 1))
                 similarity_scores[i][j] = sim
     return similarity_scores
 

@@ -1,14 +1,19 @@
 from utils import *
 import math
 import numpy as np
+import pickle
 from IPython import embed
 
 def main():
     threshold = 0.0001
     para = 0.5
     alpha = 0.85
-    beta = 0.1
-    budget = 2000
+    beta = 0.0
+    ap = True
+    if ap:
+        budget = 1000
+    else:
+        budget = 10
     stopword_path = '/shared/data/qiz3/text_summ/data/stopwords.txt'
     ret = {}
     for ii, s in enumerate(duc_set):
@@ -45,7 +50,7 @@ def main():
         summary_id = []
 
         current_len = 0
-        while current_len < budget:
+        while len(summary_id) < budget:
             maxscore = -9999
             pick = -1
             for i in range(sent_num):
@@ -56,7 +61,7 @@ def main():
                     if scores[i] - similarity_scores[i][j] * scores[j] * para < tmp_score:
                         tmp_score = scores[i] - similarity_scores[i][j] * scores[j] * para
                 new_score = tmp_score / math.pow(len(passages[i]), beta)
-                if new_score > maxscore and len(raw_sentences[i]) + current_len < budget:
+                if new_score > maxscore:
                     maxscore = new_score
                     pick = i
             if pick == -1:
@@ -65,14 +70,25 @@ def main():
             chosen[pick] = True
             summary_id.append(pick)
 
-        for i in summary_id:
-            print(raw_sentences[i])
-        l = [-1 for _ in passages]
-        for i in summary_id:
-            l[i] = 1
-        ret[s] = l
+        #summary = ''
+        #for id in summary_id:
+        #    summary += raw_sentences[id] + ' '
 
-    return ret
+        l = [-1 for _ in passages]
+        if ap:
+            for idx, i in enumerate(summary_id):
+                l[i] = len(summary_id) - idx
+            ret[s] = l
+        else:
+            for i in summary_id:
+                l[i] = 1
+            ret[s] = l
+
+        #f = open('/shared/data/qiz3/text_summ/text_summarization/baselines/sentence_summ/tmp/system1/' + s + 't.txt', 'w')
+        #f.write(summary)
+        #f.close()
+
+    pickle.dump(ret, open('./data/textrank_sentence_res.p', 'wb'))
 
 def calculate_similarity(passages):
     sent_num = len(passages)
@@ -82,6 +98,11 @@ def calculate_similarity(passages):
             if j < i:
                 similarity_scores[i][j] = similarity_scores[j][i]
             else:
+                #sim = 0
+                #for word in passages[i]:
+                #    if word in passages[j]:
+                #        sim += 1
+                #sim /= (math.log(len(set(passages[i])) + 1) + math.log(len(set(passages[j])) + 1))
                 sim = len(set(passages[i]) & set(passages[j])) / (math.log(len(set(passages[j])) + 1) + math.log(len(set(passages[j])) + 1))
                 similarity_scores[i][j] = sim
     return similarity_scores

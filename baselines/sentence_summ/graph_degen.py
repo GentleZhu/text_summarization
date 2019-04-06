@@ -4,6 +4,7 @@ import re
 import math
 import numpy as np
 import nltk
+import pickle
 from collections import defaultdict
 from nltk.tokenize import sent_tokenize
 from nltk.tokenize import word_tokenize
@@ -146,8 +147,8 @@ def load_target_docs(file_path, target_docs):
     return passage
 
 def pick_sentences(word_scores, budget, passages, raw_sentences):
-    lambda_ = 60
-    c = 0.5
+    lambda_ = 40
+    c = 0.1
     sent_scores = {}
     sent_words = defaultdict(set)
     for idx, sentence in enumerate(passages):
@@ -158,11 +159,11 @@ def pick_sentences(word_scores, budget, passages, raw_sentences):
     chosen = list()
     current_len = 0
     current_p = set()
-    while current_len < budget:
+    while len(chosen) < budget:
         max_ = -1
         max_idx = -1
         for idx in range(len(passages)):
-            if idx in chosen or current_len + len(raw_sentences[idx]) > budget:
+            if idx in chosen:
                 continue
             score_gain = sent_scores[idx] + lambda_ * len(sent_words[idx] - current_p)
             score_gain /= math.pow(len(raw_sentences[idx]), c)
@@ -178,8 +179,12 @@ def pick_sentences(word_scores, budget, passages, raw_sentences):
     return chosen
 
 def main():
-    window = 3
-    budget = 2000
+    window = 4
+    ap = False
+    if ap:
+        budget = 1000
+    else:
+        budget = 3
     stopword_path = '/shared/data/qiz3/text_summ/data/stopwords.txt'
     ret = {}
     for ii, s in enumerate(duc_set):
@@ -196,10 +201,27 @@ def main():
                 score += d[neighbor]
             word_scores[name] = score
         chosen = pick_sentences(word_scores, budget, passages, raw_sentences)
-        summary = ''
-        for i in chosen:
-            summary += raw_sentences[i]
-        print(summary)
+
+        #summary = ''
+        #for id in chosen:
+        #    summary += raw_sentences[id] + ' '
+
+        l = [-1 for _ in passages]
+        if ap:
+            for idx, i in enumerate(chosen):
+                l[i] = len(chosen) - idx
+            ret[s] = l
+        else:
+            for i in chosen:
+                l[i] = 1
+            ret[s] = l
+
+        #f = open('/shared/data/qiz3/text_summ/text_summarization/baselines/sentence_summ/tmp/system1/' + s + 't.txt',
+        #         'w')
+        #f.write(summary)
+        #f.close()
+
+    pickle.dump(ret, open('./data/graph_degen_sentence_res.p', 'wb'))
 
 if __name__ == '__main__':
     main()

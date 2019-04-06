@@ -43,23 +43,22 @@ def mmr(similarity_scores, phrase_scores, budget, passages, raw_sentences):
     return summary_id
 
 def select_sentences(phrase_scores, budget, passages, raw_sentences):
-    lambda_ = 2
-    c = 0.5
+    lambda_ = 100
+    c = 0.1
     sent_scores = []
     sent_phrases = defaultdict(set)
     for idx, sentence in enumerate(passages):
         sent_phrases[idx] = set(sentence)
         score = sum([phrase_scores[phrase] if phrase in phrase_scores else 0 for phrase in sentence ])
         sent_scores.append(score)
-    embed()
     chosen = list()
     current_len = 0
     current_p = set()
-    while current_len < budget:
+    while len(chosen) < budget:
         max_ = -1
         max_idx = -1
         for idx in range(len(passages)):
-            if idx in chosen or current_len + len(raw_sentences[idx]) > budget:
+            if idx in chosen:
                 continue
             addtional_cnt = 0
             for p in sent_phrases[idx]:
@@ -78,7 +77,8 @@ def select_sentences(phrase_scores, budget, passages, raw_sentences):
             for p in sent_phrases[max_idx]:
                 if p in phrase_scores:
                     current_p.add(p)
-            print('current #kw is {}'.format(len(current_p)))
+            #print(sent_phrases[max_idx])
+            #print('current #kw is {}'.format(current_p))
         else:
             break
     return chosen
@@ -103,12 +103,21 @@ def calculate_similarity(passages, raw_sentences):
                 #similarity_scores[i][j] = 1 - spatial.distance.cosine(sent_X[i], sent_X[j])
     return similarity_scores
 
-def generate_results():
-    budget = 2000
+def generate_results(prefix):
+    #duc_set =  ['d30001', 'd30002', 'd30003', 'd30005','d30006', 'd30007', 'd30015', 'd30033', 'd30034', 'd30036']
+    duc_set =  ['2018_ca_wildfire', 'Indiahomo_201809', 'Mars_201807', 'Roaster_201802','Tsunami_201812', 'Bridge_201810', 'James_201808', 'Rhino_201803', 'Tigerwoods_201809', 'final_debate']
+    ap = False
+    if ap:
+        budget = 10000
+    else:
+        budget = 3
     ret = {}
     for idx, s in enumerate(duc_set):
-        phrase_scores = pickle.load(open('data/phrase_scores_' + s + '.p', 'rb'))
-        file_path ='/shared/data/qiz3/text_summ/data/DUC04/test/' + s + '.txt'
+        phrase_scores = pickle.load(open('/shared/data/qiz3/text_summ/text_summarization/baselines/sentence_summ/data/phrase_scores_{}_{}.p'.format(prefix, s), 'rb'))
+        print(idx, s)
+        #phrase_scores = pickle.load(open('results/' + s + '.p', 'rb'))
+        #file_path = '/shared/data/qiz3/text_summ/data/DUC04/train/' + s + '.txt'
+        file_path ='/shared/data/qiz3/text_summ/text_summarization/data/news_doc_line/' + s + '.txt'
         passages, raw_sentences = generate_docs_autophrase(file_path)
         if True:
             chosen = select_sentences(phrase_scores, budget, passages, raw_sentences)
@@ -116,10 +125,17 @@ def generate_results():
             similarity_scores = calculate_similarity(passages, raw_sentences)
             chosen = mmr(similarity_scores, phrase_scores, budget, passages, raw_sentences)
         l = [-1 for _ in passages]
-        for i in chosen:
-            l[i] = 1
-        ret[s] = l
-    return ret
+
+        if ap:
+            for idx, i in enumerate(chosen):
+                l[i] = len(chosen) - idx
+            ret[s] = l
+        else:
+            for i in chosen:
+                l[i] = 1
+            ret[s] = l
+
+    pickle.dump(ret, open('/shared/data/qiz3/text_summ/text_summarization/baselines/sentence_summ/data/{}_phrase_res.p'.format(prefix), 'wb'))
 
 def main_1():
     budget = 665
@@ -149,10 +165,12 @@ def main():
     summary = ''
     for i in chosen:
         summary += raw_sentences[i]
-    embed()
     exit()
 
 if __name__ == '__main__':
+    generate_results(sys.argv[1])
+    exit()
+
     budget = 2000
     phrase_scores = pickle.load(open(sys.argv[1], 'rb'))
     #passages = pickle.load(open(sys.argv[2], 'rb'))

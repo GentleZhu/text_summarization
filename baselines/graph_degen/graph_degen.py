@@ -3,6 +3,7 @@ import os
 import re
 import math
 import numpy as np
+import pickle
 import nltk
 from collections import defaultdict
 from nltk.tokenize import sent_tokenize
@@ -11,7 +12,7 @@ from nltk import pos_tag
 from IPython import embed
 from tqdm import tqdm
 
-duc_set = ['d30002']
+duc_set = pickle.load(open('/shared/data/qiz3/text_summ/text_summarization/data/duc_set.p','rb'))
 
 class Node_info:
     def __init__(self, name):
@@ -144,8 +145,9 @@ def load_target_docs(file_path):
     return passage
 
 def main():
+    window = 5
     for s in duc_set:
-        file_path = '/shared/data/qiz3/text_summ/data/DUC04/test/' + s + '.txt'
+        file_path = '/shared/data/qiz3/text_summ/text_summarization/data/' + s + '.txt'
         passage = load_target_docs(file_path)
         graph = from_terms_to_graph(passage, window)
         cores_dec(graph)
@@ -153,7 +155,7 @@ def main():
         phrase_scores = {}
         for (n, name) in zip(core_n, names):
             phrase_scores[name] = n
-        pickle.dump(phrase_scores, open('../sentence_summ/data/phrase_scores_' + 's' + '.p', 'wb'))
+        pickle.dump(phrase_scores, open('../sentence_summ/data/phrase_scores_' + s + '.p', 'wb'))
 
 if __name__ == '__main__':
     main()
