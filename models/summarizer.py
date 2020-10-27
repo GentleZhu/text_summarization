@@ -3,14 +3,15 @@ import numpy as np
 import sys
 from tqdm import tqdm
 import random
-from gensim.models import Word2Vec
-from gensim.models.doc2vec import Doc2Vec, TaggedDocument
-from model import GCN
-import torch
-import torch.nn.functional as F
+#from gensim.models import Word2Vec
+#from gensim.models.doc2vec import Doc2Vec, TaggedDocument
+#from model import GCN
+
+#import torch
+#import torch.nn.functional as F
 sys.path.append('../')
 
-from collections import defaultdict
+from collections import defaultdict, Counter
 import pickle, scipy, nltk, string
 import re, math
 from numpy.linalg import matrix_power
@@ -19,8 +20,10 @@ from scipy import spatial
 from phraseExtractor import phraseExtractor
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
-import networkx as nx
-import matplotlib.pyplot as plt
+#import networkx as nx
+#import matplotlib.pyplot as plt
+
+#from wmd import WMD
 
 
 def seedRanker(target_phrases, similarity_scores, phrase2idx, idx2phrase, labels, selected = None, opt=1):
@@ -156,25 +159,13 @@ def build_co_occurrence_matrix(target, phrase2idx, seg_file, opt = 0, graph_buil
     similarity_scores = np.zeros([len(phrase2idx), len(phrase2idx)])
     doc_id = -1
     passage = []
-    for line in tqdm(segIn):
+    for line in segIn:
         doc_id += 1
         if doc_id not in target:
             continue
         line = line.strip()
-        phrases = re.findall("<phrase>(.*?)</phrase>", line)
-        #print(phrases)
-        #result = {}
-        
-       
 
-        #text = ''.join(c for c in line.lower() if c not in '0123456789')
-        #tmp_passage = [word.strip(string.punctuation) for word in text.lower().split()]
-        if graph_builder is None:
-            tmp_passage = phrases
-        else:
-            for p in set(phrases):
-                line = line.replace("<phrase>"+p+"</phrase>", p.replace(' ', '_'))
-            tmp_passage = graph_builder.normalize(line)
+        tmp_passage = graph_builder.normalize(line)
         '''
         tmp_similarity_scores = np.zeros([len(phrase2idx), len(phrase2idx)])
         single_occ_threshold = 3
@@ -195,6 +186,7 @@ def build_co_occurrence_matrix(target, phrase2idx, seg_file, opt = 0, graph_buil
         similarity_scores += tmp_similarity_scores
     '''
         passage.append(tmp_passage)
+    #print(passage)
     if opt == 0:
         for sentence in passage:
             for idx, phrase in enumerate(sentence):
@@ -361,7 +353,7 @@ def calculate_pairwise_similarity(phrase2idx):
     similarity_scores = np.zeros([len(phrase2idx), len(phrase2idx)])
     emb = load_emb('/shared/data/qiz3/text_summ/src/jt_code/full.emb')
     print('Calculate pairwise similarity...')
-    for i in tqdm(range(len(phrase2idx))):
+    for i in range(len(phrase2idx)):
         for j in range(len(phrase2idx)):
             if j < i:
                 similarity_scores[i][j] = similarity_scores[j][i]
@@ -738,23 +730,76 @@ def search_nearest_doc(feature_vectors, vectorizer, target_docs, skip_doc = None
                 break
     return ranked_list
 
+def get_weights(id_doc):
+
+    # input: a ref/hyp pair, with each piece is a list of sentences and each sentence is a list of token IDs.
+    #           if the metric is not wms, there is also an extra list of sentence ids for ref and hyp
+    # output: 1. a ref/hyp pair of 1-d lists of all word and sentence IDs (where applicable)
+    #           2. a ref/hyp pair of arrays of weights for each of those IDs
+
+    # Note that we only need to output counts; these will be normalized by the sum of counts in the WMD code.
+
+    # 2 1-d lists of all relevant embedding IDs
+    id_lists = [[], []]
+    # 2 arrays where an embedding's weight is at the same index as its ID in id_lists
+    d_weights = [np.array([], dtype=np.float32), np.array([], dtype=np.float32)]
+
+    for i in range(len(id_doc)):  # for ref/hyp
+        if METRIC != "wms":
+            # pop off sent ids so id_doc is back to word ids only
+            sent_ids = id_doc[i].pop()
+
+        # collapse to 1-d
+        wordIDs = sum(id_doc[i], [])
+        # get dict that maps from ID to count
+        counts = Counter(wordIDs)
+
+        # get word weights
+        if METRIC != "sms":
+            for k in counts.keys():
+                id_lists[i].append(k)
+                d_weights[i] = np.append(d_weights[i], counts[k])
+
+        # get sentence weights
+        if METRIC != "wms":
+            # weight words by counts and give each sentence a weight equal to the number of words in the sentence
+            id_lists[i] += sent_ids
+            # make sure to check no empty ids
+            d_weights[i] = np.append(d_weights[i], np.array([float(len(x)) for x in id_doc[i] if x != []], dtype=np.float32))
+
+    return id_lists, d_weights
+
+def search_nearest_sms(new_doc, nbow_docs, word2emb):
+    id_list, d_weights = [], np.array([], dtype=np.float32)
+    counts = Counter(new_doc)
+    for k in counts.keys():
+        id_list.append(k)
+        d_weights = np.append(d_weights, counts[k])
+    nbow_docs[len(nbow_docs)] = (len(nbow_docs), id_list, d_weights)
+    calc = WMD(word2emb, nbow_docs, vocabulary_min=1)
+    #embed()
+    print(calc.nearest_neighbors(len(nbow_docs)-1))
+    del nbow_docs[len(nbow_docs)-1]
+
+
 def search_nearest_doc_emb(doc2emb, new_emb, skip_doc=None, contain_doc=None):
     res_list = []
     ranked_list = []
     num_docs = new_emb.shape[0]
-
+    contain_doc = set(contain_doc)
     similarity = defaultdict(float)
-    for i in doc2emb:
+    for i in range(doc2emb.shape[0]):
+    #for i in doc2emb:
         if skip_doc and i in skip_doc:
             continue
         if contain_doc is None or i in contain_doc:
             for doc_agg_emb in new_emb:
-                similarity[i] += 1 - spatial.distance.cosine(doc_agg_emb, doc2emb[i])
+                similarity[i] += spatial.distance.cosine(doc_agg_emb, doc2emb[i, :])
             #res_list.append((i, 1 - spatial.distance.cosine(new_emb, doc2emb[i])))
     # print(similarity)
-    res_list = sorted(similarity.items(), key=lambda t: -t[1])
-
-    return [x[0] for x in res_list[:num_docs]]
+    res_list = sorted(similarity.items(), key=lambda t: t[1])
+    # embed()
+    return [x[0] for x in res_list[:num_docs*2]]
 
 def create_graph_from_matrix(sim, idx2phrase, threshold = 15):
     G = nx.Graph()
@@ -783,12 +828,13 @@ def compare(config, docs, feature_vectors, vectorizer, new_emb, doc2emb, skip_do
     if config['vec_option'] == 'tfidf':
         return search_nearest_doc(feature_vectors, vectorizer, docs, skip_doc, contain_doc)
     else:
+        #print(type(contain_doc))
         return search_nearest_doc_emb(doc2emb, new_emb, skip_doc, contain_doc)
 
-def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_phrase_cnt, inverted_index, graph_builder=None, file_name=None):
-    
 
-    #TODO: @jingjing, rewrite target_doc_assign in utils, you can have label2emb.keys instead call concepts
+# different phrase selection module
+def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_phrase_cnt, inverted_index, graph_builder=None, save_point=None):
+    
     '''
     doc_embeddings = model.doc_embeddings()
     hierarchy = simple_hierarchy()
@@ -800,8 +846,8 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
     ranked_list = []
     '''
 
-    #if config['summ_method'] == 'caseOLAP':
-    if False:
+    if config['summ_method'] == 'caseOLAP':
+    #if True:
         phrase2idx, idx2phrase = build_in_domain_dict(docs)
         scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt, inverted_index,
                                                        phrase2idx, option='A')
@@ -817,8 +863,8 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
                 'caseOLAP', file_name.replace('data/news_doc/', '').replace('.txt', '')), 'wb'))
         #phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
 
-    #elif config['summ_method'] == 'caseOLAP-twin':
-    if False:
+    elif config['summ_method'] == 'caseOLAP-twin':
+    #if True:
 
         phrase2idx, idx2phrase = build_in_domain_dict(docs)
         scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt,
@@ -832,15 +878,16 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
         for phrase in phrase2idx:
             phrase_scores[phrase] *= background_scores[phrase]
         ranked_list = [(k, phrase_scores[k]) for k in phrase_scores]
-        ranked_list = sorted(ranked_list, key=lambda t: -t[1])
+        random.shuffle(ranked_list)
+        #ranked_list = sorted(ranked_list, key=lambda t: -t[1])
 
         phrase_scores = {t[0]: t[1] for t in ranked_list[:30]}
         pickle.dump(phrase_scores, open(
             '/shared/data/qiz3/text_summ/text_summarization/baselines/sentence_summ/data/phrase_scores_{}_{}.p'.format(
                 'caseOLAP-twin', file_name.replace('data/news_doc/', '').replace('.txt', '')), 'wb'))
 
-    #elif config['summ_method'] == 'textrank':
-    if False:
+    elif config['summ_method'] == 'sumdocs_textrank':
+    #if True:
         ###################
         # Textrank block ##
         ###################
@@ -850,44 +897,64 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
         scores = textrank(phrase2idx.keys(), similarity_scores)
         ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
         ranked_list = sorted(ranked_list, key=lambda t:-t[1])
-        out=[]
-        for tp in ranked_list[:20]:
-            out.append(tp[0])
-        print(' '.join(out))
-
-        phrase_scores = {t[0]:t[1] for t in ranked_list[:30]}
-        pickle.dump(phrase_scores, open(
-            '/shared/data/qiz3/text_summ/text_summarization/baselines/sentence_summ/data/phrase_scores_{}_{}.p'.format(
-                'textrank', file_name.replace('data/news_doc/', '').replace('.txt', '')), 'wb'))
+        #out=[]
+        #for tp in ranked_list[:20]:
+        #   out.append(tp[0])
+        #print(' '.join(out))
+        #print("adfasdf")
+        #random.shuffle(ranked_list)
+        
+        # random phrase score baseline
+        if False:
+            random.shuffle(ranked_list)
+            phrase_scores = {t[0]:0.1 for t in ranked_list[:config['topk']]}
+        else:
+            phrase_scores = {t[0]:t[1] for t in ranked_list[:config['topk']]}
+        # embed()
+        return phrase_scores
+        # embed()
+        #pickle.dump(phrase_scores, open(
+        #    '/shared/data/qiz3/text_summ/text_summarization/baselines/sentence_summ/data/phrase_scores_{}_{}.p'.format(
+        #        'textrank', file_name.replace('data/news_doc/', '').replace('.txt', '')), 'wb'))
         #phrase_scores[duc_set[idx]] = {t[0]: t[1] for t in ranked_list}
-
-    #elif config['summ_method'] == 'bams':
-    if True:
+    elif config['summ_method'] == 'sumdocs_wo_twins':
         phrase2idx, idx2phrase = build_in_domain_dict(docs)
         scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt,
                                                        inverted_index, phrase2idx, option='A')
+        labels = set()
 
-        
-
-        '''
+        for r in ranked_list[:10]:
+            if len(r[0].strip()) > 0:
+                labels.add(r[0].strip())
         phrase2idx, idx2phrase = build_in_domain_dict(docs)
-        scores_, ranked_list_ = generate_caseOLAP_scores([comparative_docs], docs, document_phrase_cnt, inverted_index,
-                                                       phrase2idx, option='B')
-        phrase_scores = {t[0]: t[1] for t in ranked_list_}
-        background_scores = {t[0]: t[1] for t in ranked_list}
+        W_tgt = build_target_co_occurrence_matrix(docs, phrase2idx, opt=1)
+        scores = seedRanker(phrase2idx.keys(), W_tgt, phrase2idx, idx2phrase, labels, None, 1)
+        #ranked_list = [(idx2phrase[i], score) for (i, score) in enumerate(scores)]
+        #ranked_list = sorted(ranked_list, key=lambda t:-t[1])
+        #phrase_scores = {t[0]:t[1] for t in ranked_list[:config['topk']]}
+        bgs = {}
+        for score in scores:
+            bgs[score[0]] = score[1]
+        final = []
         for phrase in phrase2idx:
-            phrase_scores[phrase] *= background_scores[phrase]
-        ranked_list = [(k, phrase_scores[k]) for k in phrase_scores]
-        ranked_list = sorted(ranked_list, key=lambda t: -t[1])
-        '''
-
+            final.append([phrase, bgs[phrase]])
+        final.sort(key=lambda x:-x[1])
+        phrase_scores = {}
+        for p in final[:config['topk']]:
+            phrase_scores[p[0]] = p[1]
+        return phrase_scores
+    elif config['summ_method'] == 'sumdocs':
+    #if True:
+        phrase2idx, idx2phrase = build_in_domain_dict(docs)
+        scores, ranked_list = generate_caseOLAP_scores(siblings_docs, docs, document_phrase_cnt,
+                                                       inverted_index, phrase2idx, option='A')
         labels = set()
 
         for r in ranked_list[:10]:
             if len(r[0].strip()) > 0:
                 labels.add(r[0].strip())
         target_phrase2idx, target_idx2phrase = build_in_domain_dict(docs)
-
+        #embed()
         round_next = None
 
         phrase2idx, idx2phrase = build_background_dict(comparative_docs, document_phrase_cnt)
@@ -895,11 +962,14 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
 
         phrase2idx, idx2phrase = build_in_domain_dict(docs, phrase2idx)
         
-        W_bgs = build_co_occurrence_matrix(comparative_docs, phrase2idx, 
-                    '/shared/data/qiz3/text_summ/src/jt_code/HiExpan-master/data/full/intermediate/segmentation.txt', opt=1, graph_builder=graph_builder)
-
+        #W_bgs = build_co_occurrence_matrix(comparative_docs, phrase2idx, 
+        #            '/shared/data/qiz3/text_summ/text_summarization/dataset/preprocessed_truncated/train.txt.src.tokenized.fixed.cleaned.final.truncated.seperated.phrased.new.txt', opt=1, graph_builder=graph_builder)
+        W_bgs = build_co_occurrence_matrix(comparative_docs, phrase2idx, config['background_file'],  opt=0, graph_builder=graph_builder)
         W_tgt = build_target_co_occurrence_matrix(docs, phrase2idx, opt=1)
-        for i in range(5):
+        #embed()
+        # TODO: debug this section
+        epoch = 10
+        for i in range(epoch):
             
             #embed()
             #create_graph_from_matrix(similarity_scores, idx2phrase)
@@ -919,21 +989,24 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
 
             avg = 0
             for p in tgt:
+                #bgs[p] = 0
                 avg += tgt[p] - bgs[p]
             avg /= len(tgt)
             final = []
+            textrank_base = []
             for phrase in target_phrase2idx:
                 if tgt[phrase] - bgs[phrase] > avg:
                     final.append([phrase, tgt[phrase] - bgs[phrase]])
+                textrank_base.append([phrase, tgt[phrase]])
                 #final.append(tgt[phrase] - bgs[phrase])
             final.sort(key=lambda x:-x[1])
-            round_next = list(map(lambda x:x[0], final))[:100]
-            print(' '.join(round_next[:20]), len(round_next))
-            #embed()
+            textrank_base.sort(key=lambda x:-x[1])
+            round_next = list(map(lambda x:x[0], final))[:config['topk']]
 
         phrase_scores = {}
-        for p in final[:30]:
+        for p in final[:config['topk']]:
             phrase_scores[p[0]] = p[1]
+
         '''
         final_phrase2idx, final_idx2phrase = {}, {}
         for i in final[:100]:
@@ -945,10 +1018,13 @@ def summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_p
         selected_index = select_phrases(final, similarity_scores, 10, 15)
         phrases = [final_idx2phrase[k] for k in selected_index]
         '''
-        pickle.dump(phrase_scores, open(
-            '/shared/data/qiz3/text_summ/text_summarization/baselines/sentence_summ/data/phrase_scores_{}_{}.p'.format(
-                'bams', file_name.replace('data/news_doc/', '').replace('.txt', '')), 'wb'))
-
+        
+        #pickle.dump(phrase_scores, open(
+        #    '/shared/data/qiz3/text_summ/text_summarization/baselines/sentence_summ/data/phrase_scores_{}_{}.p'.format(
+        #        'bams', file_name.replace('data/news_doc/', '').replace('.txt', '')), 'wb'))
+        #save_point.append(phrase_scores)
+        #embed()
+        return phrase_scores
         #embed()
 
 
