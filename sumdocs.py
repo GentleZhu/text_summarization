@@ -121,7 +121,6 @@ def mmr_selector(doc_set, phrase_scores, doc_id = None, OUT = None, limits = 100
         if doc_ids is None:
             OUT.write('{}\n'.format(' '.join(out_text)).replace('_', ' ') )
         else:
-            #OUT.write('{}\t{}\n'.format(doc_id, ' '.join(out_text)) )
             OUT.write('{}\n'.format(' '.join(out_text)).replace('_', ' ') )
         OUT.flush()
 
@@ -133,11 +132,6 @@ def calculate_similarity(passages):
             if j < i:
                 similarity_scores[i][j] = similarity_scores[j][i]
             else:
-                #sim = 0
-                #for word in passages[i]:
-                #    if word in passages[j]:
-                #        sim += 1
-                #sim /= (math.log(len(set(passages[i])) + 1) + math.log(len(set(passages[j])) + 1))
                 sim = len(set(passages[i]) & set(passages[j])) / (math.log(len(set(passages[j])) + 1) + math.log(len(set(passages[j])) + 1))
                 similarity_scores[i][j] = sim
     return similarity_scores
@@ -177,22 +171,14 @@ def textrank(doc_set, OUT, limits = 100):
 
     out_text = []
     for r in ranked_list:
-        
-        
-        # if length > 60:
-        # TODO: add a paramter for maximum length of summarization
         if length +  len(doc_set[r[0]])> limits:
             continue
         length += len(doc_set[r[0]])
         out_text.append(' '.join(doc_set[r[0]]).replace('_', ' '))
-    #print('doc_set is', doc_set )
-    #print('####################################')
-    #print('OUT is', out_text)
     OUT.write(' '.join(out_text) + '\n')
     OUT.flush()
 
 def lexrank(lxr,sentences,OUT,limits=100):
-    #out_text=lxr.get_ranked_sentences(sentences)
     all_summary = lxr.get_summary(sentences, summary_size = len(sentences))
     length = 0
     out_text = []
@@ -330,7 +316,6 @@ def load_cate(config):
         topics=[]
         for line in IN2:
             topics.append(line.strip())
-    #for i,line in enumerate(w_file):
         for line in IN:
             if i==0:
                 i+=1
@@ -338,7 +323,6 @@ def load_cate(config):
             try:
                 line=line.decode("utf-8")
             except:
-            #print('encoding error is ',line)
                 continue
             line=line.strip().split(' ')
 
@@ -419,23 +403,15 @@ def sumdocs(docs, tokenized_sents, offset, line_cnt, doc_id):
             
             category = max(count.items(), key=operator.itemgetter(1))[0]
             comp_pool = list(map(lambda x: x[0],top_label_assignment[category]))
-            #all_siblings = ['food', 'drinks', 'ambience', 'service', 'price']
-            #all_siblings = ['science', 'politics', 'business', 'sport']
             all_siblings = topics
 
-            # changes: 1010
             twin_docs = list(map(lambda x: x[0], top_label_assignment[category][:config['num_siblings']]))
             siblings_docs = [list(map(lambda x: x[0], top_label_assignment[l][:config['num_siblings']])) for l in all_siblings
                                  if l != category]
-            # 
-            t1 = time.time()
+
             comparative_docs = summarizer.compare(config, None, None, None, test2emb[offset:offset+line_cnt], train2emb, skip_doc=None, contain_doc=comp_pool)
-            
-            #print(time.time() - t1)
-            t1 = time.time()
             phrase_scores = summarizer.summary(config, docs, siblings_docs, twin_docs, comparative_docs, document_phrase_cnt, inverted_index, graph_builder=graph_builder)
-            #print(time.time() - t1)
-    # @fang
+
     elif config['summ_method'] == 'sumdocs_wo_twins':
         count = defaultdict(int)
         for doc_agg_emb in test2emb[offset:offset+line_cnt]:
@@ -447,12 +423,9 @@ def sumdocs(docs, tokenized_sents, offset, line_cnt, doc_id):
                     sim_max = sim
                     category = label
             count[category]+= 1
-        #print(count)
-        
+
         category = max(count.items(), key=operator.itemgetter(1))[0]
         comp_pool = list(map(lambda x: x[0],top_label_assignment[category]))
-        #all_siblings = ['food', 'drinks', 'ambience', 'service', 'price']
-        #all_siblings = ['science', 'politics', 'business', 'sport']
         all_siblings = topics
 
         # changes: 1010

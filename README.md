@@ -4,10 +4,23 @@ Existing multi-document summarization methods ignore the fact that there often e
 
 
 ## Run
+To run sumdocs, you need to write a config files like test_config_news and test_config_NLP. The most important parameters are $input_file, $background_file, $output_file and $summ_method.
+```
+python sumdocs.py $config_file
+```
+
+Test the Multi-News dataset
 ```
 python sumdocs.py test_config_news
 ```
-## Baseline and ab
+
+Test the Scientific-NLP dataset
+```
+python sumdocs.py test_config_NLP
+```
+
+## Baseline and ablations
+Set summ_method in config files 
 
 ## Evaluation
 Multi-facet summarization annotation protocol, details TBD.
