@@ -7,7 +7,6 @@ from baselines.baselines import densitypeak,graphdegen
 import pickle #, torch
 from scipy import spatial
 from collections import defaultdict, Counter
-#from phraseExtractor import phraseExtractor
 sys.path.append('./models/')
 from summarizer import collect_statistics, build_background_dict, generate_caseOLAP_scores, _generate_caseOLAP_scores, build_co_occurrence_matrix
 import summarizer
@@ -63,8 +62,6 @@ def calc_score(stringID, stringBank, pick, cur, dis, option = 'rouge', phrase_sc
 import random
 # why duplication happens
 def mmr_selector(doc_set, phrase_scores, doc_id = None, OUT = None, limits = 100):
-    #with open(fileOut, 'w+') as OUT:
-        # a,b = IN1.readlines(), IN2.readlines()
     sim = defaultdict(float)
     dis = []
     cur = []
@@ -89,11 +86,7 @@ def mmr_selector(doc_set, phrase_scores, doc_id = None, OUT = None, limits = 100
         scores = []
         if True:
             for idx in range(len(doc_set)):
-                #if idx in cur:
-                #    continue
-                #scores = dis[idx] + calc_score(idx, doc_set, pick, sim, dis, 'rouge', phrase_scores)
                 scores.append(calc_score(idx, doc_set, pick, cur, dis, 'rouge', phrase_scores))
-            # embed()
             if max(scores) < 0:
                 break
             
